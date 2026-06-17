@@ -340,7 +340,7 @@ async fn upload_minidump(
         form = form
             .text(
                 format!("{root}[Description]"),
-                "A GPU found on the users system. May or may not be the GPU Zed is running on",
+                "A GPU found on the users system. May or may not be the GPU LingCode is running on",
             )
             .text(format!("{root}[type]"), "gpu")
             .text(format!("{root}[name]"), device_name.unwrap_or(name))

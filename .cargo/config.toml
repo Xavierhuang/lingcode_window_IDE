@@ -13,7 +13,7 @@ rustflags = [
     "--cfg",
     "windows_slim_errors",        # This cfg will reduce the size of `windows::core::Error` from 16 bytes to 4 bytes
     "-C",
-    "target-feature=+crt-static", # This fixes the linking issue when compiling livekit on Windows
+    "target-feature=+crt-static,+fp16", # +crt-static fixes livekit linking on Windows; +fp16 enables half-precision asm in gemm-common on aarch64
 ]
 
 # We need lld to link libwebrtc.a successfully on aarch64-linux

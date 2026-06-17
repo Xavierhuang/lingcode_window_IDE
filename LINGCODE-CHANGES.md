@@ -42,10 +42,32 @@ upstream Zed.
   curated default: `model: lingmodel/lingmodel-standard` + `enabled_providers` allowlist of LingCode's 16
   providers, plus ACP agent identity / TUI strings rebranded OpenCode → LingCode.
 
+## Windows build enablement + deeper rebrand (2026-06)
+Done after the first successful Windows (aarch64-msvc) build:
+- **Welcome screen** — `crates/workspace/src/welcome.rs` "Welcome (back) to Zed" → LingCode (the classic
+  Welcome tab; the `crates/onboarding` one was already done).
+- **~110 user-visible UI strings** rebranded Zed → LingCode across ~50 crates: window/menu text
+  (`About LingCode`, `LingCode Repository/Twitter`), launch/error/log messages, collab + title-bar text,
+  update-status labels, settings descriptions (`settings_ui/src/page_data.rs`), every model-provider config
+  helper (`language_models/src/provider/*.rs` except `cloud.rs`), extensions/CLI text, and the `LingCode Agent`
+  display labels. URLs/emails (`zed.dev`), font/theme/icon load-keys (`Zed Mono`, `Zed Plex`, `Zed (Default)`),
+  internal identifiers (`ZED_AGENT_ID`, window-class/UA/protocol strings), and tests were left untouched.
+- **Cloud paywall removed** — `CloudLanguageModelProvider` registration disabled in
+  `crates/language_models/src/language_models.rs`, so the Zed Pro/Business/AI/Agent upsell UI no longer appears.
+- **Auto-update disabled** — `ZED_UPDATE_EXPLANATION` set at build time (see `build_lingcode.bat`); the app
+  won't phone home or update into upstream Zed.
+- **Binary renamed** — `crates/zed/Cargo.toml` bin target `zed` → `lingcode` (+ `default-run`), so the build
+  produces `lingcode.exe`. The Rust *package* is still named `zed` (internal, not user-visible).
+- **Build fixes for this toolchain** — `.cargo/config.toml` adds `+fp16` to the Windows `target-feature`
+  (gemm-common half-precision asm on aarch64); `build_lingcode.bat` runs the build inside `vcvarsarm64.bat`
+  with LLVM/clang on PATH (clang needed by `ring`); a junction supplies the MSVC ARM64 spectre libs. See
+  `WINDOWS-BUILD.md`.
+
 ## Intentionally NOT changed (and why)
-- **Zed cloud-commerce strings** ("Zed Pro", "Zed's hosted models", trial upsells, "Zed Agent") — should be
-  **removed** by disabling `CloudLanguageModelProvider`, not renamed (renaming would advertise a product you
-  don't sell). ~25 strings in `crates/language_models`, `crates/agent_ui`.
+- **Zed cloud-commerce strings** ("Zed Pro", "Zed's hosted models", trial upsells) — left in place in
+  `crates/language_models/src/provider/cloud.rs`, `crates/ai_onboarding`, `crates/agent_ui`, but no longer
+  reachable since `CloudLanguageModelProvider` is disabled (above). Renaming them would advertise a product
+  you don't sell.
 - **Font/theme asset names** ("Zed Mono", "Zed Icons" in `crates/settings`) — these are load keys mapping to
   bundled font/theme files; renaming the string without the assets breaks loading.
 - **`appAppxFullName`** — cert-tied (see above).

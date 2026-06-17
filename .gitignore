@@ -54,3 +54,9 @@ crates/docs_preprocessor/actions.json
 # Local documentation audit files
 /december-2025-releases.md
 /docs/december-2025-documentation-gaps.md
+
+# LingCode local build scratch (logs, screenshots, run-error dumps)
+/build_output.log
+/welcome_screenshot.png
+/*_err.txt
+/zed_version.txt
