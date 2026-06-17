@@ -8,33 +8,27 @@ use zed_actions::feedback::{EmailZed, FileBugReport, RequestFeature};
 actions!(
     zed,
     [
-        /// Opens the Zed repository on GitHub.
-        OpenZedRepo,
+        /// Opens the LingCode website.
+        OpenLingCodeWebsite,
         /// Copies installed extensions to the clipboard for bug reports.
         CopyInstalledExtensionsIntoClipboard
     ]
 );
 
-const ZED_REPO_URL: &str = "https://github.com/zed-industries/zed";
+const LINGCODE_WEBSITE_URL: &str = "https://lingcode.dev";
 
-const REQUEST_FEATURE_URL: &str = "https://github.com/zed-industries/zed/discussions/new/choose";
+const REQUEST_FEATURE_URL: &str = "https://lingcode.dev";
 
 fn file_bug_report_url(specs: &SystemSpecs) -> String {
     format!(
-        concat!(
-            "https://github.com/zed-industries/zed/issues/new",
-            "?",
-            "template=10_bug_report.yml",
-            "&",
-            "environment={}"
-        ),
-        urlencoding::encode(&specs.to_string())
+        concat!("mailto:support@lingcode.dev", "?", "subject=Bug%20Report", "&", "body={}"),
+        email_body(specs)
     )
 }
 
 fn email_zed_url(specs: &SystemSpecs) -> String {
     format!(
-        concat!("mailto:hi@zed.dev", "?", "body={}"),
+        concat!("mailto:support@lingcode.dev", "?", "body={}"),
         email_body(specs)
     )
 }
@@ -104,8 +98,8 @@ pub fn init(cx: &mut App) {
                 })
                 .detach();
             })
-            .register_action(move |_, _: &OpenZedRepo, _, cx| {
-                cx.open_url(ZED_REPO_URL);
+            .register_action(move |_, _: &OpenLingCodeWebsite, _, cx| {
+                cx.open_url(LINGCODE_WEBSITE_URL);
             });
     })
     .detach();

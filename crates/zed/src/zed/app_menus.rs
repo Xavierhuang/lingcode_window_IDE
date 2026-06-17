@@ -284,6 +284,50 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
             ],
         },
         Menu {
+            name: "Cloud".into(),
+            disabled: false,
+            items: vec![
+                MenuItem::action("Deploy to Cloud", lingcode_cloud::DeployToCloud),
+                MenuItem::separator(),
+                MenuItem::action("Connect Backend", lingcode_cloud::ConnectBackend),
+                MenuItem::action("Disconnect Backend", lingcode_cloud::DisconnectBackend),
+                MenuItem::action("Open Backend Console", lingcode_cloud::OpenBackendConsole),
+                MenuItem::separator(),
+                MenuItem::action(
+                    "Share Project & Collaborators",
+                    lingcode_cloud::ShareCloudProject,
+                ),
+            ],
+        },
+        Menu {
+            name: "Android".into(),
+            disabled: false,
+            items: vec![
+                MenuItem::action("Check Android Toolchain", lingcode_android::AndroidDoctor),
+                MenuItem::separator(),
+                MenuItem::action("Build Debug APK", lingcode_android::AndroidBuildDebug),
+                MenuItem::action("Build Release Bundle", lingcode_android::AndroidBuildBundle),
+                MenuItem::action("Run on Device / Emulator", lingcode_android::AndroidRun),
+                MenuItem::separator(),
+                MenuItem::action("List Devices", lingcode_android::AndroidListDevices),
+                MenuItem::action("List Emulators", lingcode_android::AndroidListEmulators),
+                MenuItem::action("Start Emulator", lingcode_android::AndroidStartEmulator),
+                MenuItem::separator(),
+                MenuItem::action("Logcat", lingcode_android::AndroidLogcat),
+                MenuItem::action("Layout Inspector", lingcode_android::AndroidLayoutInspector),
+                MenuItem::action("Analyze APK / AAB", lingcode_android::AndroidAnalyzeApk),
+                MenuItem::separator(),
+                MenuItem::action(
+                    "Deploy to Google Play",
+                    lingcode_android::AndroidDeployToPlay,
+                ),
+                MenuItem::action(
+                    "Open Play Console",
+                    lingcode_android::AndroidOpenPlayConsole,
+                ),
+            ],
+        },
+        Menu {
             name: "Window".into(),
             disabled: false,
             items: vec![
@@ -311,22 +355,10 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
                 MenuItem::action(
                     "Documentation",
                     super::OpenBrowser {
-                        url: "https://zed.dev/docs".into(),
+                        url: "https://lingcode.dev/docs.html".into(),
                     },
                 ),
-                MenuItem::action("LingCode Repository", feedback::OpenZedRepo),
-                MenuItem::action(
-                    "LingCode Twitter",
-                    super::OpenBrowser {
-                        url: "https://twitter.com/zeddotdev".into(),
-                    },
-                ),
-                MenuItem::action(
-                    "Join the Team",
-                    super::OpenBrowser {
-                        url: "https://zed.dev/jobs".into(),
-                    },
-                ),
+                MenuItem::action("LingCode Website", feedback::OpenLingCodeWebsite),
             ],
         },
     ]

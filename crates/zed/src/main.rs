@@ -136,7 +136,7 @@ fn fail_to_open_window_async(e: anyhow::Error, cx: &mut AsyncApp) {
 
 fn fail_to_open_window(e: anyhow::Error, _cx: &mut App) {
     eprintln!(
-        "LingCode failed to open a window: {e:?}. See https://zed.dev/docs/linux for troubleshooting steps."
+        "LingCode failed to open a window: {e:?}. See https://lingcode.dev/docs.html for troubleshooting steps."
     );
     #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
     {
@@ -159,7 +159,7 @@ fn fail_to_open_window(e: anyhow::Error, _cx: &mut App) {
                     Notification::new("LingCode failed to launch")
                         .body(Some(
                             format!(
-                                "{e:?}. See https://zed.dev/docs/linux for troubleshooting steps."
+                                "{e:?}. See https://lingcode.dev/docs.html for troubleshooting steps."
                             )
                             .as_str(),
                         ))
@@ -720,6 +720,7 @@ fn main() {
         terminal_view::init(cx);
         journal::init(app_state.clone(), cx);
         lingcode_cloud::init(app_state.clone(), cx);
+        lingcode_android::init(app_state.clone(), cx);
         encoding_selector::init(cx);
         language_selector::init(cx);
         line_ending_selector::init(cx);

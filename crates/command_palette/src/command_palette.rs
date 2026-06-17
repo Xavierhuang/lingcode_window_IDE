@@ -715,7 +715,22 @@ pub fn humanize_action_name(name: &str) -> String {
             result.push(char);
         }
     }
-    result
+    debrand_action_name(result)
+}
+
+/// De-brands the upstream `zed` action namespace for display only. Every
+/// user-visible surface that shows action names (command palette, keymap editor,
+/// which-key, settings keybindings) routes through `humanize_action_name`, so
+/// rewriting here covers them all. The action's real identifier — which keymaps
+/// and `dispatch_action` rely on — is never touched.
+fn debrand_action_name(name: String) -> String {
+    if let Some(rest) = name.strip_prefix("zed: ") {
+        format!("lingcode: {rest}")
+    } else if name == "zed" {
+        "lingcode".to_string()
+    } else {
+        name
+    }
 }
 
 impl std::fmt::Debug for Command {

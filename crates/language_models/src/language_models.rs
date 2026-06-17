@@ -22,6 +22,7 @@ use crate::provider::bedrock::BedrockLanguageModelProvider;
 // use crate::provider::cloud::CloudLanguageModelProvider;
 use crate::provider::copilot_chat::CopilotChatLanguageModelProvider;
 use crate::provider::google::GoogleLanguageModelProvider;
+use crate::provider::ling_model::LingModelLanguageModelProvider;
 use crate::provider::lmstudio::LmStudioLanguageModelProvider;
 pub use crate::provider::mistral::MistralLanguageModelProvider;
 use crate::provider::ollama::OllamaLanguageModelProvider;
@@ -229,6 +230,15 @@ fn register_language_model_providers(
     // LingCode: the Zed-hosted cloud provider (Zed Pro/Business/AI paywall) is disabled.
     // LingCode ships its own ACP agent and 16-provider set instead of Zed's hosted service.
     let _ = &user_store; // formerly consumed by CloudLanguageModelProvider::new
+    // LingCode: the managed LingModel provider is registered first for prominence.
+    registry.register_provider(
+        Arc::new(LingModelLanguageModelProvider::new(
+            client.http_client(),
+            credentials_provider.clone(),
+            cx,
+        )),
+        cx,
+    );
     registry.register_provider(
         Arc::new(AnthropicLanguageModelProvider::new(
             client.http_client(),

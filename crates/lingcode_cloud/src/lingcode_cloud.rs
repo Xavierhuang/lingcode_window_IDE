@@ -34,6 +34,10 @@ actions!(
         ConnectBackend,
         /// Disconnect the LingCode Cloud managed backend from the current project.
         DisconnectBackend,
+        /// Open the LingCode Cloud backend console for the current project in your browser.
+        OpenBackendConsole,
+        /// Manage collaborators (owner/editor/viewer) for the current project.
+        ShareCloudProject,
     ]
 );
 
@@ -49,10 +53,24 @@ pub fn init(_: Arc<AppState>, cx: &mut App) {
             workspace.register_action(|workspace, _: &DisconnectBackend, window, cx| {
                 open_task(workspace, CloudTask::Disconnect, window, cx);
             });
+            // The backend console and project-sharing UIs are web apps served from
+            // LingCode Cloud; auth is handled by the user's browser session, so we
+            // just open them (matches the macOS app, which opens the same pages).
+            workspace.register_action(|_workspace, _: &OpenBackendConsole, _window, cx| {
+                cx.open_url(BACKEND_CONSOLE_URL);
+            });
+            workspace.register_action(|_workspace, _: &ShareCloudProject, _window, cx| {
+                cx.open_url(PROJECT_SHARE_URL);
+            });
         },
     )
     .detach();
 }
+
+/// LingCode Cloud account/backend admin console (web app).
+const BACKEND_CONSOLE_URL: &str = "https://lingcode.dev/backends.html";
+/// LingCode Cloud project + collaborators panel (web app).
+const PROJECT_SHARE_URL: &str = "https://lingcode.dev/project.html";
 
 #[derive(Clone, Copy, PartialEq)]
 enum CloudTask {

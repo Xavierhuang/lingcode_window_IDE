@@ -37,6 +37,7 @@ pub struct OpenAiCompatibleSettings {
 pub struct OpenAiCompatibleLanguageModelProvider {
     id: LanguageModelProviderId,
     name: LanguageModelProviderName,
+    raw_id: Arc<str>,
     http_client: Arc<dyn HttpClient>,
     state: Entity<State>,
 }
@@ -124,7 +125,8 @@ impl OpenAiCompatibleLanguageModelProvider {
 
         Self {
             id: id.clone().into(),
-            name: id.into(),
+            name: id.clone().into(),
+            raw_id: id,
             http_client,
             state,
         }
@@ -161,7 +163,15 @@ impl LanguageModelProvider for OpenAiCompatibleLanguageModelProvider {
     }
 
     fn icon(&self) -> IconOrSvg {
-        IconOrSvg::Icon(IconName::AiOpenAiCompat)
+        // Brand the LingCode-shipped preset providers; everything else uses the
+        // generic OpenAI-compatible glyph.
+        let icon = match self.raw_id.as_ref() {
+            "Kimi" => IconName::AiKimi,
+            "Qwen" => IconName::AiQwen,
+            "z.ai" => IconName::AiZai,
+            _ => IconName::AiOpenAiCompat,
+        };
+        IconOrSvg::Icon(icon)
     }
 
     fn default_model(&self, cx: &App) -> Option<Arc<dyn LanguageModel>> {

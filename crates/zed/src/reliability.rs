@@ -357,7 +357,7 @@ async fn upload_minidump(
         form = form
             .text(
                 "sentry[contexts][Active_GPU][Description]",
-                "The GPU Zed is running on",
+                "The GPU LingCode is running on",
             )
             .text("sentry[contexts][Active_GPU][type]", "gpu")
             .text("sentry[contexts][Active_GPU][name]", active_gpu.device_name)
