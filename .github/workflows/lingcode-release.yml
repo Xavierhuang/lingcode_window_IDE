@@ -43,8 +43,23 @@ env:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    name: build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 300
+    strategy:
+      # Keep building the other arch even if one fails.
+      fail-fast: false
+      matrix:
+        include:
+          # Intel/AMD PCs — built on the standard x86 hosted runner.
+          - arch: x86_64
+            runner: windows-latest
+          # ARM64 PCs (Snapdragon/Surface etc.) — MUST be built on a native
+          # ARM64 runner. An x86_64 build only runs under emulation there, falls
+          # back to the software GPU renderer, and the editor UI becomes
+          # unresponsive (window opens but buttons aren't clickable).
+          - arch: aarch64
+            runner: windows-11-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,8 +85,8 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
-          # Bust the cache per-tag so release builds are reproducible
-          key: lingcode-release
+          # Per-arch key so the x86_64 and aarch64 builds don't share a cache.
+          key: lingcode-release-${{ matrix.arch }}
 
       - name: Install Inno Setup
         shell: pwsh
@@ -83,7 +98,7 @@ jobs:
 
       - name: Build installer
         shell: pwsh
-        run: ./script/bundle-windows.ps1 -Architecture x86_64
+        run: ./script/bundle-windows.ps1 -Architecture ${{ matrix.arch }}
 
       - name: Locate installer
         id: artifact
@@ -110,7 +125,11 @@ jobs:
           draft: true
           generate_release_notes: true
           body: |
-            LingCode ${{ github.ref_name }} for Windows (x86_64).
+            LingCode ${{ github.ref_name }} for Windows (${{ matrix.arch }}).
+
+            Download the installer matching your PC:
+            * **LingCode-x86_64.exe** — Intel / AMD PCs
+            * **LingCode-aarch64.exe** — ARM64 PCs (Snapdragon, Surface Pro X, etc.)
 
             > ⚠️ This build is **unsigned** — Windows SmartScreen may warn on first launch.
             > Click "More info" → "Run anyway", or add a code-signing certificate to remove the warning.
