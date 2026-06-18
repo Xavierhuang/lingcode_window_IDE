@@ -48,7 +48,11 @@ if (Test-Path $vswhere) {
 } else {
     $vsInstallPath = "C:\Program Files\Microsoft Visual Studio\2022\Community"
 }
-& "$vsInstallPath\Common7\Tools\Launch-VsDevShell.ps1" -Arch (Get-VSArch -Arch $Architecture) -HostArch (Get-VSArch -Arch $OSArchitecture)
+# Launch-VsDevShell's -HostArch only accepts "x86"/"amd64" (not "arm64"). On an
+# ARM64 host, use the amd64-hosted cross tools: they run under emulation and
+# still build a native arm64 target binary.
+$vsHostArch = if ($OSArchitecture -eq "aarch64") { "amd64" } else { Get-VSArch -Arch $OSArchitecture }
+& "$vsInstallPath\Common7\Tools\Launch-VsDevShell.ps1" -Arch (Get-VSArch -Arch $Architecture) -HostArch $vsHostArch
 Pop-Location
 
 $target = "$Architecture-pc-windows-msvc"
