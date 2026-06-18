@@ -31,7 +31,10 @@ WizardStyle=modern
 
 CloseApplications=force
 
-#if GetEnv("CI") != ""
+; Only register the signing tool when CI also has the Azure signing secret.
+; Forks without a code-signing cert build unsigned (bundle-windows.ps1 skips
+; registering the Defaultsign tool, so referencing it here would be invalid).
+#if GetEnv("CI") != "" && GetEnv("AZURE_CLIENT_ID") != ""
 SignTool=Defaultsign
 #endif
 
