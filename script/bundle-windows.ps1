@@ -40,7 +40,15 @@ function Get-VSArch {
 }
 
 Push-Location
-& "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\Launch-VsDevShell.ps1" -Arch (Get-VSArch -Arch $Architecture) -HostArch (Get-VSArch -Arch $OSArchitecture)
+# Resolve the VS install via vswhere so this works on Community/Enterprise/BuildTools
+# (GitHub-hosted runners ship Enterprise, not Community).
+$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+if (Test-Path $vswhere) {
+    $vsInstallPath = & $vswhere -latest -products * -property installationPath
+} else {
+    $vsInstallPath = "C:\Program Files\Microsoft Visual Studio\2022\Community"
+}
+& "$vsInstallPath\Common7\Tools\Launch-VsDevShell.ps1" -Arch (Get-VSArch -Arch $Architecture) -HostArch (Get-VSArch -Arch $OSArchitecture)
 Pop-Location
 
 $target = "$Architecture-pc-windows-msvc"
@@ -62,7 +70,9 @@ $env:RELEASE_CHANNEL = $channel
 Pop-Location
 
 function CheckEnvironmentVariables {
-    if(-not $env:CI) {
+    # Only enforce the signing/release-infra variables when a signing secret is
+    # actually present. Forks without Zed's Azure cert build unsigned and skip this.
+    if(-not $env:CI -or -not $env:AZURE_CLIENT_ID) {
         return
     }
 
@@ -101,9 +111,10 @@ function GenerateLicenses {
 
 function BuildZedAndItsFriends {
     Write-Output "Building Zed and its friends, for channel: $channel"
-    # Build zed.exe, cli.exe and auto_update_helper.exe
+    # Build lingcode.exe, cli.exe and auto_update_helper.exe
+    # NOTE: package is still named `zed`, but its [[bin]] is renamed `lingcode`, so the output is lingcode.exe
     cargo build --release --package zed --package cli --package auto_update_helper --target $target
-    Copy-Item -Path ".\$CargoOutDir\zed.exe" -Destination "$innoDir\LingCode.exe" -Force
+    Copy-Item -Path ".\$CargoOutDir\lingcode.exe" -Destination "$innoDir\LingCode.exe" -Force
     Copy-Item -Path ".\$CargoOutDir\cli.exe" -Destination "$innoDir\cli.exe" -Force
     Copy-Item -Path ".\$CargoOutDir\auto_update_helper.exe" -Destination "$innoDir\auto_update_helper.exe" -Force
     # Build explorer_command_injector.dll
@@ -128,7 +139,7 @@ function BuildRemoteServer {
     # Create zipped remote server binary
     $remoteServerSrc = (Resolve-Path ".\$CargoOutDir\remote_server.exe").Path
 
-    if ($env:CI) {
+    if ($env:CI -and $env:AZURE_CLIENT_ID) {
         Write-Output "Code signing remote_server.exe"
         & "$innoDir\sign.ps1" $remoteServerSrc
     }
@@ -142,7 +153,7 @@ function BuildRemoteServer {
 
 function ZipZedAndItsFriendsDebug {
     $items = @(
-        ".\$CargoOutDir\zed.pdb",
+        ".\$CargoOutDir\lingcode.pdb",
         ".\$CargoOutDir\cli.pdb",
         ".\$CargoOutDir\auto_update_helper.pdb",
         ".\$CargoOutDir\explorer_command_injector.pdb",
@@ -193,14 +204,22 @@ function MakeAppx {
         }
     }
     Copy-Item -Path "$manifestFile" -Destination "$innoDir\make_appx\AppxManifest.xml"
-    # Add makeAppx.exe to Path
-    $sdk = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64"
+    # Resolve the newest Windows SDK bin that actually contains makeAppx.exe
+    # (the exact SDK version differs between this machine and CI runners).
+    $sdkRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
+    $sdk = Get-ChildItem $sdkRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.FullName 'x64\makeAppx.exe') } |
+        Sort-Object Name -Descending |
+        Select-Object -First 1 |
+        ForEach-Object { Join-Path $_.FullName 'x64' }
+    if (-not $sdk) { Write-Error "makeAppx.exe not found under $sdkRoot. Install the Windows SDK."; exit 1 }
     $env:Path += ';' + $sdk
     makeAppx.exe pack /d "$innoDir\make_appx" /p "$innoDir\zed_explorer_command_injector.appx" /nv
 }
 
 function SignZedAndItsFriends {
-    if (-not $env:CI) {
+    # Skip signing on forks without the Azure code-signing secret (unsigned build).
+    if (-not $env:CI -or -not $env:AZURE_CLIENT_ID) {
         return
     }
 
@@ -314,7 +333,16 @@ function BuildInstaller {
     # Windows runner 2022 default has iscc in PATH, https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md
     # Currently, we are using Windows 2022 runner.
     # Windows runner 2025 doesn't have iscc in PATH for now, https://github.com/actions/runner-images/issues/11228
-    $innoSetupPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+    $innoSetupPath = @(
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+        "C:\Program Files\Inno Setup 6\ISCC.exe",
+        "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $innoSetupPath) {
+        $cmd = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+        if ($cmd) { $innoSetupPath = $cmd.Source }
+    }
+    if (-not $innoSetupPath) { Write-Error "ISCC.exe (Inno Setup 6) not found. Install with: winget install -e --id JRSoftware.InnoSetup"; exit 1 }
 
     $definitions = @{
         "AppId"          = $appId
@@ -340,7 +368,7 @@ function BuildInstaller {
     }
 
     $innoArgs = @($issFilePath) + $defs
-    if($env:CI) {
+    if($env:CI -and $env:AZURE_CLIENT_ID) {
         $signTool = "powershell.exe -ExecutionPolicy Bypass -File $innoDir\sign.ps1 `$f"
         $innoArgs += "/sDefaultsign=`"$signTool`""
     }
