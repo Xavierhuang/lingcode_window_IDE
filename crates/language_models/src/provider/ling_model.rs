@@ -214,9 +214,10 @@ impl LingModelModel {
                     provider: PROVIDER_NAME,
                 });
             };
+            let api_url = Self::api_url();
             let request = anthropic::stream_completion(
                 http_client.as_ref(),
-                &Self::api_url(),
+                &api_url,
                 &api_key,
                 request,
                 beta_headers,

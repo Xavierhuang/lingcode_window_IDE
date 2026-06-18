@@ -8,12 +8,24 @@ perf-test = ["test", "--profile", "release-fast", "--lib", "--bins", "--tests", 
 # Keep similar flags here to share some ccache
 perf-compare = ["run", "--profile", "release-fast", "-p", "perf", "--config", "target.'cfg(true)'.rustflags=[\"--cfg\", \"perf_enabled\"]", "--", "compare"]
 
-[target.'cfg(target_os = "windows")']
+# Split Windows rustflags by triple: +crt-static fixes livekit linking and
+# windows_slim_errors shrinks `windows::core::Error` from 16 to 4 bytes on both.
+# +fp16 (half-precision asm in gemm-common) is aarch64-only — it is NOT a valid
+# x86_64 target-feature, so keeping it off x86_64 is required for CI builds.
+[target.x86_64-pc-windows-msvc]
 rustflags = [
     "--cfg",
-    "windows_slim_errors",        # This cfg will reduce the size of `windows::core::Error` from 16 bytes to 4 bytes
+    "windows_slim_errors",
     "-C",
-    "target-feature=+crt-static,+fp16", # +crt-static fixes livekit linking on Windows; +fp16 enables half-precision asm in gemm-common on aarch64
+    "target-feature=+crt-static",
+]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = [
+    "--cfg",
+    "windows_slim_errors",
+    "-C",
+    "target-feature=+crt-static,+fp16",
 ]
 
 # We need lld to link libwebrtc.a successfully on aarch64-linux
