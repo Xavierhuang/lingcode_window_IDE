@@ -45,6 +45,12 @@ actions!(
         OpenRemoteControl,
         /// Open Claude Code in a new integrated terminal (runs the `claude` CLI).
         OpenClaudeCode,
+        /// Open Codex in a new integrated terminal (runs the `codex` CLI).
+        OpenCodex,
+        /// Open Gemini in a new integrated terminal (runs the `gemini` CLI).
+        OpenGemini,
+        /// Open Grok in a new integrated terminal (runs the `grok` CLI).
+        OpenGrok,
     ]
 );
 
@@ -79,30 +85,46 @@ pub fn init(_: Arc<AppState>, cx: &mut App) {
             workspace.register_action(|workspace, _: &PushToGithub, window, cx| {
                 open_github_push(workspace, window, cx);
             });
-            // Open Claude Code in a new integrated terminal by running the `claude`
-            // CLI (the canonical way to use Claude Code). Mirrors the macOS app's
-            // "Claude Code" tab; requires `claude` on PATH.
+            // Open an external coding agent in a new integrated terminal by running
+            // its CLI (mirrors the macOS app's agent tabs). Each requires the CLI on
+            // PATH; if absent, the terminal surfaces a "command not found" error.
             workspace.register_action(|workspace, _: &OpenClaudeCode, window, cx| {
-                open_claude_code(workspace, window, cx);
+                open_agent_terminal(workspace, "Claude Code", "claude", window, cx);
+            });
+            workspace.register_action(|workspace, _: &OpenCodex, window, cx| {
+                open_agent_terminal(workspace, "Codex", "codex", window, cx);
+            });
+            workspace.register_action(|workspace, _: &OpenGemini, window, cx| {
+                open_agent_terminal(workspace, "Gemini", "gemini", window, cx);
+            });
+            workspace.register_action(|workspace, _: &OpenGrok, window, cx| {
+                open_agent_terminal(workspace, "Grok", "grok", window, cx);
             });
         },
     )
     .detach();
 }
 
-/// Open Claude Code by spawning the `claude` CLI in a new, revealed integrated
-/// terminal. No-op if there is no terminal panel; if `claude` is not on PATH the
-/// terminal surfaces the shell's "command not found" error.
-fn open_claude_code(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+/// Open an external coding agent by spawning its CLI (`claude` / `codex` /
+/// `gemini` / `grok`) in a new, revealed integrated terminal. No-op if there is
+/// no terminal panel; if the CLI is not on PATH the terminal surfaces the
+/// shell's "command not found" error.
+fn open_agent_terminal(
+    workspace: &mut Workspace,
+    label: &str,
+    command: &str,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) {
     let Some(terminal_panel) = workspace.panel::<terminal_view::TerminalPanel>(cx) else {
         return;
     };
     let task = task::SpawnInTerminal {
-        id: task::TaskId("lingcode::claude-code".to_string()),
-        full_label: "Claude Code".to_string(),
-        label: "Claude Code".to_string(),
-        command_label: "claude".to_string(),
-        command: Some("claude".to_string()),
+        id: task::TaskId(format!("lingcode::agent-terminal::{command}")),
+        full_label: label.to_string(),
+        label: label.to_string(),
+        command_label: command.to_string(),
+        command: Some(command.to_string()),
         use_new_terminal: true,
         allow_concurrent_runs: true,
         reveal: task::RevealStrategy::Always,
