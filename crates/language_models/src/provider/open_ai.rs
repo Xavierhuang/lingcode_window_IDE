@@ -160,6 +160,11 @@ impl LanguageModelProvider for OpenAiLanguageModelProvider {
         Some(self.create_language_model(open_ai::Model::default_fast()))
     }
 
+    // Recommended after LingModel and Anthropic (registration order).
+    fn recommended_models(&self, _cx: &App) -> Vec<Arc<dyn LanguageModel>> {
+        vec![self.create_language_model(open_ai::Model::default())]
+    }
+
     fn provided_models(&self, cx: &App) -> Vec<Arc<dyn LanguageModel>> {
         let mut models = BTreeMap::default();
 

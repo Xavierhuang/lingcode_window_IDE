@@ -175,6 +175,12 @@ impl LanguageModelProvider for GoogleLanguageModelProvider {
         Some(self.create_language_model(google_ai::Model::default_fast()))
     }
 
+    // Gemini is recommended last of the four (after LingModel, Anthropic, OpenAI);
+    // surface the flagship Pro as the recommended pick.
+    fn recommended_models(&self, _cx: &App) -> Vec<Arc<dyn LanguageModel>> {
+        vec![self.create_language_model(google_ai::Model::Gemini31Pro)]
+    }
+
     fn provided_models(&self, cx: &App) -> Vec<Arc<dyn LanguageModel>> {
         let mut models = BTreeMap::default();
 

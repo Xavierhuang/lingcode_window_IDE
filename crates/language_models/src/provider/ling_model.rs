@@ -303,6 +303,13 @@ impl LanguageModelProvider for LingModelLanguageModelProvider {
         Some(self.create_language_model(lingmodel_model()))
     }
 
+    // LingModel is LingCode's primary recommended model: it appears first in the
+    // model picker's Recommended section (providers contribute in registration
+    // order, and LingModel is registered first).
+    fn recommended_models(&self, _cx: &App) -> Vec<Arc<dyn LanguageModel>> {
+        vec![self.create_language_model(lingmodel_model())]
+    }
+
     fn provided_models(&self, _cx: &App) -> Vec<Arc<dyn LanguageModel>> {
         vec![self.create_language_model(lingmodel_model())]
     }
