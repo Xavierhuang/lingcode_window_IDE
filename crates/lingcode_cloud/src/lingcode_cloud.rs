@@ -116,7 +116,8 @@ fn open_agent_terminal(
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) {
-    let Some(terminal_panel) = workspace.panel::<terminal_view::TerminalPanel>(cx) else {
+    let Some(terminal_panel) = workspace.panel::<terminal_view::terminal_panel::TerminalPanel>(cx)
+    else {
         return;
     };
     let task = task::SpawnInTerminal {
