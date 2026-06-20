@@ -138,6 +138,12 @@ jobs:
     name: build (linux-x86_64)
     runs-on: ubuntu-22.04
     timeout-minutes: 300
+    env:
+      # zed's prebuilt webrtc-sys is compiled with clang; building it with the
+      # default `c++` (g++) fails on src/frame_cryptor.cpp. Match upstream Zed's
+      # workflows, which all set CC/CXX to clang. `script/linux` installs clang.
+      CC: clang
+      CXX: clang++
     steps:
       - name: Checkout
         uses: actions/checkout@v4
