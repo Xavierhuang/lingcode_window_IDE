@@ -43,6 +43,8 @@ actions!(
         PushToGithub,
         /// Open the LingCode web remote-control to drive a remote LingCode host.
         OpenRemoteControl,
+        /// Open Claude Code in a new integrated terminal (runs the `claude` CLI).
+        OpenClaudeCode,
     ]
 );
 
@@ -77,9 +79,40 @@ pub fn init(_: Arc<AppState>, cx: &mut App) {
             workspace.register_action(|workspace, _: &PushToGithub, window, cx| {
                 open_github_push(workspace, window, cx);
             });
+            // Open Claude Code in a new integrated terminal by running the `claude`
+            // CLI (the canonical way to use Claude Code). Mirrors the macOS app's
+            // "Claude Code" tab; requires `claude` on PATH.
+            workspace.register_action(|workspace, _: &OpenClaudeCode, window, cx| {
+                open_claude_code(workspace, window, cx);
+            });
         },
     )
     .detach();
+}
+
+/// Open Claude Code by spawning the `claude` CLI in a new, revealed integrated
+/// terminal. No-op if there is no terminal panel; if `claude` is not on PATH the
+/// terminal surfaces the shell's "command not found" error.
+fn open_claude_code(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    let Some(terminal_panel) = workspace.panel::<terminal_view::TerminalPanel>(cx) else {
+        return;
+    };
+    let task = task::SpawnInTerminal {
+        id: task::TaskId("lingcode::claude-code".to_string()),
+        full_label: "Claude Code".to_string(),
+        label: "Claude Code".to_string(),
+        command_label: "claude".to_string(),
+        command: Some("claude".to_string()),
+        use_new_terminal: true,
+        allow_concurrent_runs: true,
+        reveal: task::RevealStrategy::Always,
+        ..Default::default()
+    };
+    terminal_panel
+        .update(cx, |terminal_panel, cx| {
+            terminal_panel.spawn_task(&task, window, cx)
+        })
+        .detach_and_log_err(cx);
 }
 
 /// LingCode Cloud account/backend admin console (web app).

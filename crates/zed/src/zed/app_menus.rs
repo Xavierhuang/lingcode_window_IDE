@@ -288,6 +288,8 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
             name: "Cloud".into(),
             disabled: false,
             items: vec![
+                MenuItem::action("Open Claude Code", lingcode_cloud::OpenClaudeCode),
+                MenuItem::separator(),
                 MenuItem::action("Deploy to Cloud", lingcode_cloud::DeployToCloud),
                 MenuItem::action("Push to GitHub", lingcode_cloud::PushToGithub),
                 MenuItem::action("Install Dependencies", lingcode_install::MagicInstall),
