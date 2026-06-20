@@ -328,6 +328,7 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
                 MenuItem::action("Logcat", lingcode_android::AndroidLogcat),
                 MenuItem::action("Layout Inspector", lingcode_android::AndroidLayoutInspector),
                 MenuItem::action("Analyze APK / AAB", lingcode_android::AndroidAnalyzeApk),
+                MenuItem::action("Diff APK / AAB", lingcode_android::AndroidApkDiff),
                 MenuItem::separator(),
                 MenuItem::action(
                     "Deploy to Google Play",

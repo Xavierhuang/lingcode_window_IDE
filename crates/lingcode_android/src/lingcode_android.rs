@@ -51,6 +51,8 @@ actions!(
         AndroidLayoutInspector,
         /// Inspect the project's built APK/AAB (package, SDKs, permissions, size).
         AndroidAnalyzeApk,
+        /// Compare two APK/AAB files (size delta + aapt2 badging diff).
+        AndroidApkDiff,
         /// Build the release bundle and upload it to Google Play (Play Developer API).
         AndroidDeployToPlay,
         /// Open the Google Play Console in your browser.
@@ -97,6 +99,9 @@ pub fn init(app_state: Arc<AppState>, cx: &mut App) {
             });
             workspace.register_action(|workspace, _: &AndroidAnalyzeApk, window, cx| {
                 open_task(workspace, AndroidAction::AnalyzeApk, window, cx);
+            });
+            workspace.register_action(|workspace, _: &AndroidApkDiff, window, cx| {
+                apk_diff(workspace, window, cx);
             });
             workspace.register_action(|_workspace, _: &AndroidOpenPlayConsole, _window, cx| {
                 cx.open_url(PLAY_CONSOLE_URL);
@@ -274,6 +279,12 @@ enum AndroidJob {
     LayoutInspector { adb: PathBuf },
     /// Inspect the project's built APK/AAB.
     AnalyzeApk { cwd: PathBuf, sdk: Option<PathBuf> },
+    /// Diff two APK/AAB artifacts (size + aapt2 badging).
+    ApkDiff {
+        a: PathBuf,
+        b: PathBuf,
+        sdk: Option<PathBuf>,
+    },
 }
 
 /// Release config, read from `<project>/.lingcode/play-deploy.json`.
@@ -520,6 +531,9 @@ impl AndroidModal {
                 }
                 AndroidJob::AnalyzeApk { cwd, sdk } => {
                     run_analyze_apk(cwd, sdk, this.clone(), cx).await
+                }
+                AndroidJob::ApkDiff { a, b, sdk } => {
+                    run_apk_diff(a, b, sdk, this.clone(), cx).await
                 }
                 AndroidJob::Report(_) => Ok(()),
             };
@@ -961,6 +975,115 @@ fn find_aapt2(sdk: Option<&Path>) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Pick two APK/AAB files via the native dialog, then open a modal diffing them.
+fn apk_diff(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    let _ = workspace;
+    let sdk = android_sdk();
+    let paths_receiver = cx.prompt_for_paths(gpui::PathPromptOptions {
+        files: true,
+        directories: false,
+        multiple: true,
+        prompt: Some("Select two APK/AAB files to compare".into()),
+    });
+    let workspace = cx.weak_entity();
+    window
+        .spawn(cx, async move |cx| {
+            let paths = match paths_receiver.await {
+                Ok(Ok(Some(paths))) => paths,
+                _ => return,
+            };
+            workspace
+                .update_in(cx, |workspace, window, cx| {
+                    let job = if paths.len() == 2 {
+                        AndroidJob::ApkDiff {
+                            a: paths[0].clone(),
+                            b: paths[1].clone(),
+                            sdk,
+                        }
+                    } else {
+                        AndroidJob::Report(vec![
+                            "Select exactly two APK/AAB files to compare.".into(),
+                        ])
+                    };
+                    workspace.toggle_modal(window, cx, move |_window, cx| {
+                        AndroidModal::new("APK / AAB Diff".into(), job, cx)
+                    });
+                })
+                .ok();
+        })
+        .detach();
+}
+
+async fn run_apk_diff(
+    a: PathBuf,
+    b: PathBuf,
+    sdk: Option<PathBuf>,
+    this: gpui::WeakEntity<AndroidModal>,
+    cx: &mut gpui::AsyncApp,
+) -> Result<()> {
+    let size_a = std::fs::metadata(&a).map(|m| m.len()).unwrap_or(0);
+    let size_b = std::fs::metadata(&b).map(|m| m.len()).unwrap_or(0);
+    push(&this, cx, format!("A: {}", a.display())).await;
+    push(&this, cx, format!("B: {}", b.display())).await;
+    push(&this, cx, format!("Size A: {} KB", size_a / 1024)).await;
+    push(&this, cx, format!("Size B: {} KB", size_b / 1024)).await;
+    push(
+        &this,
+        cx,
+        format!(
+            "Size delta (B - A): {} KB",
+            (size_b as i64 - size_a as i64) / 1024
+        ),
+    )
+    .await;
+    push(&this, cx, String::new()).await;
+
+    let Some(aapt2) = find_aapt2(sdk.as_deref()) else {
+        push(
+            &this,
+            cx,
+            "aapt2 not found (install Android SDK build-tools) — size diff only.".to_string(),
+        )
+        .await;
+        return Ok(());
+    };
+
+    let a_str = a.to_string_lossy();
+    let badging_a = capture_output(&aapt2, &["dump", "badging", a_str.as_ref()])
+        .await
+        .unwrap_or_default();
+    let b_str = b.to_string_lossy();
+    let badging_b = capture_output(&aapt2, &["dump", "badging", b_str.as_ref()])
+        .await
+        .unwrap_or_default();
+
+    let lines_a: std::collections::BTreeSet<&str> = badging_a.lines().collect();
+    let lines_b: std::collections::BTreeSet<&str> = badging_b.lines().collect();
+
+    push(&this, cx, "Only in A (removed):".to_string()).await;
+    let mut removed = 0;
+    for line in lines_a.difference(&lines_b).take(60) {
+        push(&this, cx, format!("- {}", line)).await;
+        removed += 1;
+    }
+    if removed == 0 {
+        push(&this, cx, "  (none)".to_string()).await;
+    }
+
+    push(&this, cx, String::new()).await;
+    push(&this, cx, "Only in B (added):".to_string()).await;
+    let mut added = 0;
+    for line in lines_b.difference(&lines_a).take(60) {
+        push(&this, cx, format!("+ {}", line)).await;
+        added += 1;
+    }
+    if added == 0 {
+        push(&this, cx, "  (none)".to_string()).await;
+    }
+
+    Ok(())
 }
 
 async fn run_analyze_apk(
