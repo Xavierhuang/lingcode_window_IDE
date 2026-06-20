@@ -694,8 +694,12 @@ impl AutoUpdater {
                 )
             })?;
 
-        // Tags look like `v0.1.2`; the version comparison expects bare semver.
-        let version = release.tag_name.trim_start_matches('v').to_string();
+        // Tags look like `v0.1.2` or `win-v0.1.2`; strip the prefix to bare semver.
+        let version = release
+            .tag_name
+            .trim_start_matches("win-")
+            .trim_start_matches('v')
+            .to_string();
 
         Ok(ReleaseAsset {
             version,
