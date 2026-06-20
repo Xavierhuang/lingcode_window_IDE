@@ -60,8 +60,8 @@ Done after the first successful Windows (aarch64-msvc) build:
   together); it is defined in code (id `zed`), so this is display-only and does not touch any asset file.
 - **Cloud paywall removed** — `CloudLanguageModelProvider` registration disabled in
   `crates/language_models/src/language_models.rs`, so the Zed Pro/Business/AI/Agent upsell UI no longer appears.
-- **Auto-update disabled** — `ZED_UPDATE_EXPLANATION` set at build time (see `build_lingcode.bat`); the app
-  won't phone home or update into upstream Zed.
+- **Auto-update — now wired to GitHub Releases** (was: disabled). See the dedicated section
+  "Auto-update via GitHub Releases" below. The old `ZED_UPDATE_EXPLANATION` build-time disable is removed.
 - **Binary renamed** — `crates/zed/Cargo.toml` bin target `zed` → `lingcode` (+ `default-run`), so the build
   produces `lingcode.exe`. The Rust *package* is still named `zed` (internal, not user-visible).
 - **Build fixes for this toolchain** — `.cargo/config.toml` adds `+fp16` to the Windows `target-feature`
@@ -83,6 +83,21 @@ Repointed/removed user-visible surfaces that revealed the upstream:
 - **Scattered visible strings** — agent upgrade prompt (`agent_ui/src/conversation_view.rs`), thread-rating
   consent (`thread_view.rs`), crash GPU context (`zed/src/reliability.rs`), OpenRouter `X-Title`/`HTTP-Referer`
   (`open_router.rs`, shown in the user's OpenRouter dashboard), debug-config placeholder (`debugger_ui`).
+- **Remaining reachable `zed.dev/docs` links** — repointed to `lingcode.dev/docs.html`: the Extensions-UI
+  suggestion table (~18 per-language/feature "learn more" links in `extensions_ui/src/extensions_ui.rs`),
+  the REPL help link (`zed/src/zed/quick_action_bar/repl_menu.rs`, `ZED_REPL_DOCUMENTATION` value; const name
+  kept — internal), and the Linux file-open error "See docs" button (`workspace/src/notifications.rs`).
+  (Still left, by the rules above: `zed.dev` links behind the disabled cloud/collab features, plus
+  comments, tests, and eval fixtures. Auto-update links were repointed when it was enabled — see below.)
+- **Linux packaging templates** (non-shipping for the Windows build, done for completeness) —
+  `resources/flatpak/zed.metainfo.xml.in`, `resources/snap/snapcraft.yaml.in`, `resources/zed.desktop.in`:
+  rebranded the app name / developer / description copy, repointed homepage/help/contact/source URLs to
+  `lingcode.dev`, set the snap package/app/command names + `common-id` to `lingcode` / `dev.lingcode.LingCode`,
+  and the `.desktop` `Keywords` + `x-scheme-handler/zed` → `x-scheme-handler/lingcode`. **Two URLs are
+  PLACEHOLDERS** (marked in-file): the snap release-tarball `source:` and the flatpak screenshot images point
+  to `lingcode.dev` paths that don't exist yet — a real Linux release artifact + marketing screenshots are
+  needed before a Linux package would build/publish. Left: `ZED_BUNDLE_TYPE` env (internal, binary reads it)
+  and the template file*names* (`zed.*.in`, build-script inputs, like the kept `zed_logo.svg`).
 
 ## Android tooling (new `lingcode_android` crate)
 
@@ -170,7 +185,7 @@ the `lingcode_android` init+`register_action` pattern), wired via `lingcode_temp
   visible); registries may key on them, so left to avoid breaking extension/registry fetches.
 - **Telemetry event names** ("Zed Agent …") — invisible unless inspecting telemetry; renaming breaks
   analytics continuity.
-- **`auto_update_helper` `Zed.exe` paths / logs** — auto-update is disabled; not exercised.
+- **`auto_update_helper`** — now rebranded and exercised (see "Auto-update via GitHub Releases" below).
 - **`appAppxFullName`** — cert-tied (see above).
 
 ## Mac-IDE parity additions
@@ -313,3 +328,58 @@ into the Bun/TS `lingcode` CLI (a separate repo), so both platforms share one br
 - New deps `yjs` / `y-websocket` / `ws` (Mac bridge versions); wired into `src/index.ts`.
 - **Status:** typechecks clean except the three new imports (need `bun install`); the logic is a faithful port
   but **needs `bun install` + a live relay + sign-in to verify end-to-end** (none runnable in this session).
+
+## Auto-update via GitHub Releases
+
+Upstream Zed auto-updates from its own release server (`/releases/{channel}/{version}/asset` on
+`cloud.zed.dev`). LingCode runs no such server — its pipeline (`.github/workflows/lingcode-release.yml`)
+only builds the Windows installer and publishes it as a **GitHub Release** asset. So the built-in updater
+was rewired to use GitHub Releases instead of Zed's protocol. (Before this, the updater was compiled in for
+release builds but pointed at Zed's server — i.e. it could have updated *into* upstream Zed.)
+
+- **Discovery** (`crates/auto_update/src/auto_update.rs`) — new `AutoUpdater::get_github_release_asset`
+  queries `https://api.github.com/repos/Xavierhuang/lingcode_window_IDE/releases/latest`, parses
+  `tag_name` (strips the leading `v` for semver compare) and picks the asset named `LingCode-<arch>.exe`
+  (`x86_64` / `aarch64`). `update()` now calls it instead of `get_release_asset` (the Zed-cloud path).
+  `get_release_asset` is kept (still used by the remote-server download). The User-Agent the GitHub API
+  requires is already attached by the reqwest client's `default_headers`.
+- **Install** — unchanged and already installer-based: `install_release_windows` runs the downloaded
+  `LingCode-<arch>.exe` with `/verysilent /update=true`. The installer's `/update` mode (see `zed.iss`
+  `GetInstallDir`) stages the new files into `<app>\install\`, then on quit `auto_update_helper.exe`
+  swaps them over the live files.
+- **Helper rebrand** (`crates/auto_update_helper/`) — the file-swap job list was stale (`Zed.exe`,
+  `bin\Zed.exe`, `bin\zed`). Rewritten to the real LingCode layout: root `LingCode.exe` and CLI
+  `bin\zed.exe` (the no-ext `bin\zed` entries removed; `JOBS` is now `[Job; 20]`). Also the relaunch
+  target, the `release_file_handles` list, and the progress-dialog title (`"Zed"` → `"LingCode"`).
+- **Enablement** — removed the `ZED_UPDATE_EXPLANATION` build-time disable from `build_lingcode.bat` /
+  `check_lingcode.bat` (release builds via `bundle-windows.ps1` never set it, so they were already
+  enabled). Release-notes/announcement links repointed to the GitHub releases page / `lingcode.dev`.
+
+**The two operational requirements are now enforced in the release workflow** (`lingcode-release.yml`),
+so they don't depend on remembering them:
+- **Published, not draft** — the "Create GitHub Release" step is `draft: false` so `releases/latest`
+  serves it. Non-stable channels are marked `prerelease: true` (via a new `channel` step output) so they
+  stay OUT of `releases/latest` and stable users don't update onto a nightly/preview.
+- **Naming contract enforced** — the "Locate installer" step now requires the exact
+  `LingCode-<arch>.exe` name and fails the build otherwise (the installer's `AppSetupName` already
+  produces it; this just guarantees it can't silently drift to a name the updater won't match).
+- Release **tags must be semver** (`vX.Y.Z`); repo is hardcoded `Xavierhuang/lingcode_window_IDE`
+  (`LINGCODE_GITHUB_REPO`), change there if it moves.
+
+**Verification status: NOT run.** None of this compiled or ran in this session. Highest-risk piece is the
+`auto_update_helper` `JOBS` layout — it must match what the installer's `/update` mode actually stages into
+`install\`; confirm with **one real end-to-end update** (install vN, publish vN+1, let it update) before
+relying on it. The `test_auto_update_downloads` unit test was updated to mock the GitHub API shape.
+
+### Release-pipeline rebrand fixes (binary rename fallout)
+
+The `zed` → `lingcode` bin rename left two stale references that broke the Linux release job and the
+Windows CLI launcher:
+- **`script/bundle-linux`** — `find_libs` ran `ldd .../release/zed` (now `release/lingcode`) and `tar`
+  packed `zed$suffix.app` while the staged dir is `LingCode$suffix.app` (now matched). The `.desktop`
+  generation was also still Zed-branded and pointed `Exec`/`Icon` at a non-existent `zed` binary — now
+  `APP_CLI=lingcode`, `APP_NAME=LingCode`, `APP_ID=dev.lingcode.LingCode*`, icons installed as
+  `lingcode.png`. (`libexec/zed-editor` kept — the CLI launcher hardcodes that internal name.)
+- **`crates/cli/src/main.rs`** — the Windows `detect()` looked for `../Zed.exe`; the installed app is
+  `LingCode.exe`, so the `lingcode` terminal command couldn't find the editor. Now `../LingCode.exe`
+  (dev fallback `./lingcode.exe`).

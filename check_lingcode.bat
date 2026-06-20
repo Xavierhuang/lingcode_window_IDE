@@ -8,7 +8,9 @@ set "CARGO_INCREMENTAL=0"
 set "CARGO_PROFILE_DEV_DEBUG=0"
 set "CARGO_PROFILE_DEV_BUILD_OVERRIDE_DEBUG=0"
 set "CARGO_NET_RETRY=10"
-set "ZED_UPDATE_EXPLANATION=LingCode manages its own updates; built-in auto-update is disabled."
+rem Auto-update enabled (pulls from GitHub Releases); release builds never set this flag.
+rem To disable in a local build, uncomment:
+rem set "ZED_UPDATE_EXPLANATION=LingCode manages its own updates; built-in auto-update is disabled."
 echo === starting cargo check (--bin lingcode, -j1) ===
 cargo check --bin lingcode -j 1
 echo === EXIT CODE: %ERRORLEVEL% ===

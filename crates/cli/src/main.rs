@@ -1194,9 +1194,10 @@ mod windows {
                 let cli = std::env::current_exe()?;
                 let dir = cli.parent().context("no parent path for cli")?;
 
-                // ../Zed.exe is the standard, lib/zed is for MSYS2, ./zed.exe is for the target
-                // directory in development builds.
-                let possible_locations = ["../Zed.exe", "../lib/zed/zed-editor.exe", "./zed.exe"];
+                // ../LingCode.exe is the installed layout (root app next to bin\zed.exe),
+                // lib/zed is for MSYS2, ./lingcode.exe is for the target directory in dev builds.
+                let possible_locations =
+                    ["../LingCode.exe", "../lib/zed/zed-editor.exe", "./lingcode.exe"];
                 possible_locations
                     .iter()
                     .find_map(|p| dir.join(p).canonicalize().ok().filter(|path| path != &cli))

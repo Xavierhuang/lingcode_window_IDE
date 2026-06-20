@@ -123,7 +123,10 @@ impl State {
             // subscription existed (e.g. a cold launch where the OS delivered the
             // URL first).
             if let Some(buffered) = listener.update(cx, |listener, _| listener.take_last()) {
-                cx.defer(move |state, cx| state.on_auth_callback(buffered, cx));
+                let handle = cx.entity();
+                cx.defer(move |cx| {
+                    handle.update(cx, |state, cx| state.on_auth_callback(buffered, cx));
+                });
             }
 
             subscription
