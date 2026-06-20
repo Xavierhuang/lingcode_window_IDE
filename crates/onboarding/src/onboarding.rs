@@ -1,5 +1,5 @@
 use crate::multibuffer_hint::MultibufferHint;
-use client::{Client, UserStore, zed_urls};
+use client::{Client, UserStore};
 use cloud_api_types::Plan;
 use db::kvp::KeyValueStore;
 use fs::Fs;
@@ -25,7 +25,6 @@ use workspace::{
     AppState, Workspace, WorkspaceId,
     dock::DockPosition,
     item::{Item, ItemEvent},
-    notifications::NotifyResultExt as _,
     open_new, register_serializable_item, with_active_or_new_workspace,
 };
 use zed_actions::OpenOnboarding;
@@ -278,22 +277,15 @@ impl Onboarding {
         go_to_welcome_page(cx);
     }
 
-    fn handle_sign_in(&mut self, _: &SignIn, window: &mut Window, cx: &mut Context<Self>) {
-        let client = Client::global(cx);
-        let workspace = self.workspace.clone();
-
-        window
-            .spawn(cx, async move |mut cx| {
-                client
-                    .sign_in_with_optional_connect(true, &cx)
-                    .await
-                    .notify_workspace_async_err(workspace, &mut cx);
-            })
-            .detach();
+    fn handle_sign_in(&mut self, _: &SignIn, _: &mut Window, cx: &mut Context<Self>) {
+        // LingCode: the upstream Zed collab sign-in (zed.dev /native_app_signin)
+        // is not implemented by lingcode.dev. Account/model auth is done via the
+        // LingModel API key from the lingcode.dev account page — open it instead.
+        cx.open_url("https://lingcode.dev/account.html");
     }
 
     fn handle_open_account(_: &OpenAccount, _: &mut Window, cx: &mut App) {
-        cx.open_url(&zed_urls::account_url(cx))
+        cx.open_url("https://lingcode.dev/account.html")
     }
 
     fn render_page(&mut self, cx: &mut Context<Self>) -> AnyElement {

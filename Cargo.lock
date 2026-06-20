@@ -9649,15 +9649,18 @@ dependencies = [
  "open_router",
  "opencode",
  "pretty_assertions",
+ "rand 0.9.3",
  "release_channel",
  "schemars 1.0.4",
  "serde",
  "serde_json",
  "settings",
+ "sha2",
  "strum 0.27.2",
  "tokio",
  "ui",
  "ui_input",
+ "url",
  "util",
  "x_ai",
 ]
@@ -10029,6 +10032,34 @@ dependencies = [
  "menu",
  "serde",
  "serde_json",
+ "ui",
+ "util",
+ "which 6.0.3",
+ "workspace",
+]
+
+[[package]]
+name = "lingcode_install"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures 0.3.32",
+ "gpui",
+ "log",
+ "tempfile",
+ "ui",
+ "util",
+ "which 6.0.3",
+ "workspace",
+]
+
+[[package]]
+name = "lingcode_remote"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.32",
+ "gpui",
+ "log",
  "ui",
  "util",
  "which 6.0.3",
@@ -22483,6 +22514,8 @@ dependencies = [
  "line_ending_selector",
  "lingcode_android",
  "lingcode_cloud",
+ "lingcode_install",
+ "lingcode_remote",
  "lingcode_templates",
  "log",
  "markdown",

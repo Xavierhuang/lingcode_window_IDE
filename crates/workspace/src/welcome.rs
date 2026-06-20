@@ -1,5 +1,6 @@
 use crate::{
-    NewFile, Open, OpenMode, PathList, SerializedWorkspaceLocation, ToggleWorkspaceSidebar,
+    NewFile, NewFromTemplate, Open, OpenMode, PathList, SerializedWorkspaceLocation,
+    ToggleWorkspaceSidebar,
     Workspace, WorkspaceId,
     item::{Item, ItemEvent},
     persistence::WorkspaceDb,
@@ -161,7 +162,7 @@ impl SectionEntry {
     }
 }
 
-const CONTENT: (Section<4>, Section<3>) = (
+const CONTENT: (Section<5>, Section<3>) = (
     Section {
         title: "Get Started",
         entries: [
@@ -169,6 +170,12 @@ const CONTENT: (Section<4>, Section<3>) = (
                 icon: IconName::Plus,
                 title: "New File",
                 action: &NewFile,
+                visibility_guard: SectionVisibility::Always,
+            },
+            SectionEntry {
+                icon: IconName::FileCode,
+                title: "New from Template",
+                action: &NewFromTemplate,
                 visibility_guard: SectionVisibility::Always,
             },
             SectionEntry {
