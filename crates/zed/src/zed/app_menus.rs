@@ -288,6 +288,10 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
             name: "Cloud".into(),
             disabled: false,
             items: vec![
+                MenuItem::action("Claude Code (Panel)", agent_ui::NewClaudeCodeThread),
+                MenuItem::action("Codex (Panel)", agent_ui::NewCodexThread),
+                MenuItem::action("Gemini (Panel)", agent_ui::NewGeminiThread),
+                MenuItem::separator(),
                 MenuItem::action("Claude Code (Terminal)", lingcode_cloud::OpenClaudeCode),
                 MenuItem::action("Codex (Terminal)", lingcode_cloud::OpenCodex),
                 MenuItem::action("Gemini (Terminal)", lingcode_cloud::OpenGemini),

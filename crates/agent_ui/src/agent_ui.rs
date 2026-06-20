@@ -252,6 +252,24 @@ pub struct NewExternalAgentThread {
     agent: Option<Agent>,
 }
 
+/// Open the agent panel on the Claude Code (ACP) agent.
+#[derive(Default, Clone, PartialEq, Deserialize, JsonSchema, Action)]
+#[action(namespace = agent)]
+#[serde(deny_unknown_fields)]
+pub struct NewClaudeCodeThread;
+
+/// Open the agent panel on the Codex (ACP) agent.
+#[derive(Default, Clone, PartialEq, Deserialize, JsonSchema, Action)]
+#[action(namespace = agent)]
+#[serde(deny_unknown_fields)]
+pub struct NewCodexThread;
+
+/// Open the agent panel on the Gemini (ACP) agent.
+#[derive(Default, Clone, PartialEq, Deserialize, JsonSchema, Action)]
+#[action(namespace = agent)]
+#[serde(deny_unknown_fields)]
+pub struct NewGeminiThread;
+
 #[derive(Clone, PartialEq, Deserialize, JsonSchema, Action)]
 #[action(namespace = agent)]
 #[serde(deny_unknown_fields)]

@@ -44,8 +44,8 @@ use crate::{
     ui::EndTrialUpsell,
 };
 use crate::{
-    Agent, AgentInitialContent, ExternalSourcePrompt, NewExternalAgentThread,
-    NewNativeAgentThreadFromSummary,
+    Agent, AgentInitialContent, ExternalSourcePrompt, NewClaudeCodeThread, NewCodexThread,
+    NewExternalAgentThread, NewGeminiThread, NewNativeAgentThreadFromSummary,
 };
 use agent_settings::AgentSettings;
 use ai_onboarding::AgentPanelOnboarding;
@@ -210,6 +210,15 @@ pub fn init(cx: &mut App) {
                             panel.new_external_agent_thread(action, window, cx);
                         });
                     }
+                })
+                .register_action(|workspace, _: &NewClaudeCodeThread, window, cx| {
+                    open_external_agent_panel(workspace, "claude-acp", window, cx);
+                })
+                .register_action(|workspace, _: &NewCodexThread, window, cx| {
+                    open_external_agent_panel(workspace, "codex-acp", window, cx);
+                })
+                .register_action(|workspace, _: &NewGeminiThread, window, cx| {
+                    open_external_agent_panel(workspace, "gemini", window, cx);
                 })
                 .register_action(|workspace, action: &OpenRulesLibrary, window, cx| {
                     if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
@@ -478,6 +487,29 @@ pub fn init(cx: &mut App) {
         },
     )
     .detach();
+}
+
+/// Open the agent panel and start a new thread on a specific built-in external
+/// (ACP) agent — e.g. `claude-acp`, `codex-acp`, `gemini`. This is the native,
+/// programmatic Claude-Code/Codex/Gemini experience (the Cursor-style panel),
+/// as opposed to running the CLI in a terminal.
+fn open_external_agent_panel(
+    workspace: &mut Workspace,
+    agent_id: &'static str,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) {
+    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
+        workspace.focus_panel::<AgentPanel>(window, cx);
+        let action = NewExternalAgentThread {
+            agent: Some(Agent::Custom {
+                id: agent_id.into(),
+            }),
+        };
+        panel.update(cx, |panel, cx| {
+            panel.new_external_agent_thread(&action, window, cx);
+        });
+    }
 }
 
 fn conflict_resource_block(conflict: &ConflictContent) -> acp::ContentBlock {
