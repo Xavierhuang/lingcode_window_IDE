@@ -170,7 +170,7 @@ jobs:
         id: artifact
         shell: bash
         run: |
-          file="$(find . -maxdepth 4 -name 'zed-linux-*.tar.gz' | head -1)"
+          file="$(find . -maxdepth 4 -name 'lingcode-linux-*.tar.gz' | head -1)"
           if [ -z "$file" ]; then echo "No Linux tarball produced"; exit 1; fi
           echo "Tarball: $file ($(du -h "$file" | cut -f1))"
           echo "path=$file" >> "$GITHUB_OUTPUT"
@@ -193,6 +193,6 @@ jobs:
           body: |
             LingCode ${{ github.ref_name }} for Linux (x86_64).
 
-            * **zed-linux-x86_64.tar.gz** — extract and run `./zed.app/bin/zed` (or install via the included script).
+            * **lingcode-linux-x86_64.tar.gz** — extract and run the bundled launcher (or install via the included script).
 
             > Built on ubuntu-22.04 (glibc 2.35) — works on recent distros; older ones may need a newer glibc.
