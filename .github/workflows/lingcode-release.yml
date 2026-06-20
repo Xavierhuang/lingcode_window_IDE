@@ -8,7 +8,7 @@
 # bundle script will sign automatically).
 #
 # Triggers:
-#   * push a tag like `v0.1.0`  -> builds + creates a GitHub Release with the installer
+#   * push a tag like `v0.1.0` or `win-v0.1.0` -> builds + creates a GitHub Release
 #   * manual "Run workflow"     -> builds + uploads the installer as a run artifact
 #                                  (no Release created; good for testing)
 
@@ -17,7 +17,10 @@ name: LingCode Release
 on:
   push:
     tags:
+      # Both conventions trigger a release: bare `v0.1.0` and the `win-v0.1.0`
+      # form used by the first release. (The job builds Windows + Linux either way.)
       - "v*"
+      - "win-v*"
   workflow_dispatch:
     inputs:
       channel:
