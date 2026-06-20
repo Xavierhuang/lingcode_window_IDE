@@ -133,3 +133,66 @@ jobs:
 
             > ⚠️ This build is **unsigned** — Windows SmartScreen may warn on first launch.
             > Click "More info" → "Run anyway", or add a code-signing certificate to remove the warning.
+
+  linux:
+    name: build (linux-x86_64)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select release channel
+        shell: bash
+        run: |
+          channel="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.channel || 'stable' }}"
+          printf '%s' "$channel" > crates/zed/RELEASE_CHANNEL
+          echo "Building channel: $channel"
+
+      - name: Install Linux build dependencies (script/linux)
+        run: ./script/linux
+
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        run: rustup show
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: lingcode-release-linux-x86_64
+
+      - name: Warm cargo registry (so bundle's `cargo metadata --offline` works)
+        run: cargo fetch
+
+      - name: Build release tarball
+        run: ./script/bundle-linux
+
+      - name: Locate tarball
+        id: artifact
+        shell: bash
+        run: |
+          file="$(find . -maxdepth 4 -name 'zed-linux-*.tar.gz' | head -1)"
+          if [ -z "$file" ]; then echo "No Linux tarball produced"; exit 1; fi
+          echo "Tarball: $file ($(du -h "$file" | cut -f1))"
+          echo "path=$file" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$file")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload tarball as run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ steps.artifact.outputs.path }}
+          if-no-files-found: error
+
+      - name: Add to GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.artifact.outputs.path }}
+          draft: true
+          generate_release_notes: true
+          body: |
+            LingCode ${{ github.ref_name }} for Linux (x86_64).
+
+            * **zed-linux-x86_64.tar.gz** — extract and run `./zed.app/bin/zed` (or install via the included script).
+
+            > Built on ubuntu-22.04 (glibc 2.35) — works on recent distros; older ones may need a newer glibc.
