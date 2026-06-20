@@ -55,6 +55,8 @@ actions!(
         AndroidApkDiff,
         /// Toggle the dockable Logcat panel (live `adb logcat` stream).
         ToggleLogcat,
+        /// Forward the running app's JDWP debug port so a debugger can attach.
+        AndroidDebugJdwp,
         /// Build the release bundle and upload it to Google Play (Play Developer API).
         AndroidDeployToPlay,
         /// Open the Google Play Console in your browser.
@@ -107,6 +109,9 @@ pub fn init(app_state: Arc<AppState>, cx: &mut App) {
             });
             workspace.register_action(|workspace, _: &ToggleLogcat, window, cx| {
                 workspace.toggle_panel_focus::<LogcatPanel>(window, cx);
+            });
+            workspace.register_action(|workspace, _: &AndroidDebugJdwp, window, cx| {
+                debug_forward(workspace, window, cx);
             });
             workspace.register_action(|_workspace, _: &AndroidOpenPlayConsole, _window, cx| {
                 cx.open_url(PLAY_CONSOLE_URL);
@@ -290,6 +295,8 @@ enum AndroidJob {
         b: PathBuf,
         sdk: Option<PathBuf>,
     },
+    /// Forward the running app's JDWP port so a debugger can attach.
+    DebugForward { adb: PathBuf },
 }
 
 /// Release config, read from `<project>/.lingcode/play-deploy.json`.
@@ -539,6 +546,9 @@ impl AndroidModal {
                 }
                 AndroidJob::ApkDiff { a, b, sdk } => {
                     run_apk_diff(a, b, sdk, this.clone(), cx).await
+                }
+                AndroidJob::DebugForward { adb } => {
+                    run_debug_forward(adb, this.clone(), cx).await
                 }
                 AndroidJob::Report(_) => Ok(()),
             };
@@ -980,6 +990,69 @@ fn find_aapt2(sdk: Option<&Path>) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Forward the running app's JDWP port so an external Java/Kotlin debugger can
+/// attach. This is the concrete Android remote-debug setup (the full one-click
+/// in-editor DAP session is a larger, device-dependent follow-up).
+fn debug_forward(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    let title: SharedString = "Debug: Forward JDWP".into();
+    let job = match adb_path(android_sdk().as_deref()) {
+        Some(adb) => AndroidJob::DebugForward { adb },
+        None => AndroidJob::Report(vec![
+            "adb not found — install the Android SDK platform-tools.".into(),
+        ]),
+    };
+    workspace.toggle_modal(window, cx, move |_window, cx| {
+        AndroidModal::new(title.clone(), job, cx)
+    });
+}
+
+async fn run_debug_forward(
+    adb: PathBuf,
+    this: gpui::WeakEntity<AndroidModal>,
+    cx: &mut gpui::AsyncApp,
+) -> Result<()> {
+    let Some(serial) = first_device_serial(&adb).await else {
+        bail!("No connected device or emulator (start one first).");
+    };
+    push(&this, cx, "Finding a debuggable process (adb jdwp)…").await;
+
+    let mut command = util::command::new_std_command(&adb);
+    command.args(["-s", serial.as_str(), "jdwp"]);
+    let mut child = Child::spawn(command, Stdio::null(), Stdio::piped(), Stdio::piped())
+        .context("failed to run adb jdwp")?;
+    let stdout = child.stdout.take().context("failed to capture adb jdwp stdout")?;
+    let mut lines = futures::io::BufReader::new(stdout).lines();
+    let pid = lines.next().await.and_then(|line| line.ok());
+    drop(lines);
+    let _ = child.kill();
+
+    let Some(pid) = pid.map(|p| p.trim().to_string()).filter(|p| !p.is_empty()) else {
+        bail!("No debuggable process found — launch your app (a debuggable build) first.");
+    };
+    push(&this, cx, format!("Debuggable process PID: {pid}")).await;
+
+    let port = "5005";
+    let tcp = format!("tcp:{port}");
+    let jdwp = format!("jdwp:{pid}");
+    capture_output(
+        &adb,
+        &["-s", serial.as_str(), "forward", tcp.as_str(), jdwp.as_str()],
+    )
+    .await
+    .context("adb forward failed")?;
+
+    push(&this, cx, format!("Forwarded JDWP to localhost:{port}.")).await;
+    push(
+        &this,
+        cx,
+        format!(
+            "Attach a Java/Kotlin debugger to localhost:{port} (IntelliJ \"Remote JVM Debug\", or `jdb -attach localhost:{port}`)."
+        ),
+    )
+    .await;
+    Ok(())
 }
 
 /// Pick two APK/AAB files via the native dialog, then open a modal diffing them.
