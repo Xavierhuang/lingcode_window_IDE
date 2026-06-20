@@ -172,6 +172,26 @@ pub struct ReleaseAsset {
     pub url: String,
 }
 
+/// `owner/repo` whose GitHub Releases back LingCode's auto-update. LingCode has
+/// no Zed-style release server; it publishes a per-arch installer as a GitHub
+/// Release asset (see `.github/workflows/lingcode-release.yml`), so the updater
+/// queries the GitHub API instead of `build_zed_cloud_url`.
+const LINGCODE_GITHUB_REPO: &str = "Xavierhuang/lingcode_window_IDE";
+
+/// Minimal shape of the GitHub "latest release" API response.
+#[derive(Deserialize, Debug)]
+struct GithubRelease {
+    tag_name: String,
+    #[serde(default)]
+    assets: Vec<GithubReleaseAsset>,
+}
+
+#[derive(Deserialize, Debug)]
+struct GithubReleaseAsset {
+    name: String,
+    browser_download_url: String,
+}
+
 struct MacOsUnmounter<'a> {
     mount_path: PathBuf,
     background_executor: &'a BackgroundExecutor,
@@ -273,7 +293,7 @@ pub fn check(_: &Check, window: &mut Window, cx: &mut App) {
     {
         drop(window.prompt(
             gpui::PromptLevel::Info,
-            "Zed was installed via a package manager.",
+            "LingCode was installed via a package manager.",
             Some(&message),
             &["Ok"],
             cx,
@@ -305,19 +325,10 @@ pub fn release_notes_url(cx: &mut App) -> Option<String> {
     let release_channel = ReleaseChannel::try_global(cx)?;
     let url = match release_channel {
         ReleaseChannel::Stable | ReleaseChannel::Preview => {
-            let auto_updater = AutoUpdater::get(cx)?;
-            let auto_updater = auto_updater.read(cx);
-            let mut current_version = auto_updater.current_version.clone();
-            current_version.pre = semver::Prerelease::EMPTY;
-            current_version.build = semver::BuildMetadata::EMPTY;
-            let release_channel = release_channel.dev_name();
-            let path = format!("/releases/{release_channel}/{current_version}");
-            auto_updater.client.http_client().build_url(&path)
+            format!("https://github.com/{LINGCODE_GITHUB_REPO}/releases")
         }
-        ReleaseChannel::Nightly => {
-            "https://github.com/zed-industries/zed/commits/nightly/".to_string()
-        }
-        ReleaseChannel::Dev => "https://github.com/zed-industries/zed/commits/main/".to_string(),
+        ReleaseChannel::Nightly => "https://lingcode.dev".to_string(),
+        ReleaseChannel::Dev => "https://lingcode.dev".to_string(),
     };
     Some(url)
 }
@@ -642,6 +653,56 @@ impl AutoUpdater {
         })
     }
 
+    /// Look up the latest LingCode release directly from GitHub and return the
+    /// installer asset matching this machine's architecture. Replaces Zed's
+    /// release-server protocol (`/releases/.../asset` on `cloud.zed.dev`), which
+    /// LingCode does not run.
+    async fn get_github_release_asset(
+        this: &Entity<Self>,
+        arch: &str,
+        cx: &mut AsyncApp,
+    ) -> Result<ReleaseAsset> {
+        // LingCode publishes a per-arch Windows installer named `LingCode-<arch>.exe`.
+        // On a platform with no such asset this returns a "no asset named ..." error
+        // and the poll is a graceful no-op.
+        let client = this.read_with(cx, |this, _| this.client.http_client());
+
+        let url = format!("https://api.github.com/repos/{LINGCODE_GITHUB_REPO}/releases/latest");
+        let mut response = client.get(url.as_str(), Default::default(), true).await?;
+        let mut body = Vec::new();
+        response.body_mut().read_to_end(&mut body).await?;
+        anyhow::ensure!(
+            response.status().is_success(),
+            "GitHub releases API request failed: {} {}",
+            response.status(),
+            String::from_utf8_lossy(&body),
+        );
+
+        let release: GithubRelease =
+            serde_json::from_slice(&body).context("failed to parse GitHub releases response")?;
+
+        // The pipeline publishes `LingCode-x86_64.exe` / `LingCode-aarch64.exe`.
+        let wanted_asset = format!("LingCode-{arch}.exe");
+        let asset = release
+            .assets
+            .into_iter()
+            .find(|asset| asset.name.eq_ignore_ascii_case(&wanted_asset))
+            .with_context(|| {
+                format!(
+                    "GitHub release {} has no asset named {wanted_asset}",
+                    release.tag_name
+                )
+            })?;
+
+        // Tags look like `v0.1.2`; the version comparison expects bare semver.
+        let version = release.tag_name.trim_start_matches('v').to_string();
+
+        Ok(ReleaseAsset {
+            version,
+            url: asset.browser_download_url,
+        })
+    }
+
     async fn update(this: Entity<Self>, cx: &mut AsyncApp) -> Result<()> {
         let (client, installed_version, previous_status, release_channel) =
             this.read_with(cx, |this, cx| {
@@ -661,8 +722,7 @@ impl AutoUpdater {
             cx.notify();
         });
 
-        let fetched_release_data =
-            Self::get_release_asset(&this, release_channel, None, "zed", OS, ARCH, cx).await?;
+        let fetched_release_data = Self::get_github_release_asset(&this, ARCH, cx).await?;
         let fetched_version = fetched_release_data.clone().version;
         let app_commit_sha = Ok(cx.update(|cx| AppCommitSha::try_global(cx).map(|sha| sha.full())));
         let newer_version = Self::check_if_fetched_version_is_newer(
@@ -800,7 +860,7 @@ impl AutoUpdater {
         let filename = match OS {
             "macos" => anyhow::Ok("Zed.dmg"),
             "linux" => Ok("zed.tar.gz"),
-            "windows" => Ok("Zed.exe"),
+            "windows" => Ok("LingCodeSetup.exe"),
             unsupported_os => anyhow::bail!("not supported: {unsupported_os}"),
         }?;
 
@@ -1206,20 +1266,28 @@ mod tests {
             let clock = Arc::new(FakeSystemClock::new());
             let release_available = Arc::clone(&release_available);
             let dmg_rx = Arc::new(parking_lot::Mutex::new(Some(dmg_rx)));
+            // GitHub "latest release" JSON, with the per-arch installer asset the
+            // updater looks for (`LingCode-<arch>.exe`).
+            let asset_name = format!("LingCode-{}.exe", std::env::consts::ARCH);
+            let new_release_json = format!(
+                r#"{{"tag_name":"v0.100.1","assets":[{{"name":"{asset_name}","browser_download_url":"https://test.example/new-download"}}]}}"#
+            );
+            let old_release_json = format!(
+                r#"{{"tag_name":"v0.100.0","assets":[{{"name":"{asset_name}","browser_download_url":"https://test.example/old-download"}}]}}"#
+            );
             let fake_client_http = FakeHttpClient::create(move |req| {
                 let release_available = release_available.load(atomic::Ordering::Relaxed);
                 let dmg_rx = dmg_rx.clone();
+                let new_release_json = new_release_json.clone();
+                let old_release_json = old_release_json.clone();
                 async move {
-                if req.uri().path() == "/releases/stable/latest/asset" {
-                    if release_available {
-                        return Ok(Response::builder().status(200).body(
-                            r#"{"version":"0.100.1","url":"https://test.example/new-download"}"#.into()
-                        ).unwrap());
+                if req.uri().path().ends_with("/releases/latest") {
+                    let body = if release_available {
+                        new_release_json
                     } else {
-                        return Ok(Response::builder().status(200).body(
-                            r#"{"version":"0.100.0","url":"https://test.example/old-download"}"#.into()
-                        ).unwrap());
-                    }
+                        old_release_json
+                    };
+                    return Ok(Response::builder().status(200).body(body.into()).unwrap());
                 } else if req.uri().path() == "/new-download" {
                     return Ok(Response::builder().status(200).body({
                         let dmg_rx = dmg_rx.lock().take().unwrap();

@@ -1,23 +1,24 @@
-name: zed
-title: Zed
+name: lingcode
+title: LingCode
 base: core24
 version: "$RELEASE_VERSION"
 summary: The editor for what's next
 description: |
-  Zed is a modern open-source code editor, built from the ground up in Rust with
+  LingCode is a modern code editor, built from the ground up in Rust with
   a GPU-accelerated renderer. We help you build software faster than ever before.
 grade: stable
 confinement: classic
 compression: lzo
-website: https://zed.dev/
-source-code: https://github.com/zed-industries/zed
-issues: https://github.com/zed-industries/zed/issues
-contact: https://zed.dev/community-links#support-and-feedback
+website: https://lingcode.dev/
+source-code: https://lingcode.dev
+issues: https://lingcode.dev
+contact: https://lingcode.dev
 
 parts:
-  zed:
+  lingcode:
     plugin: dump
-    source: "https://github.com/zed-industries/zed/releases/download/v$RELEASE_VERSION/zed-linux-x86_64.tar.gz"
+    # PLACEHOLDER: needs a real LingCode Linux release artifact before a snap build will work.
+    source: "https://lingcode.dev/releases/download/v$RELEASE_VERSION/lingcode-linux-x86_64.tar.gz"
 
     organize:
       # These renames seem to not be necessary, but it's tidier.
@@ -26,10 +27,10 @@ parts:
 
     stage-packages:
       - libasound2t64
-      # snapcraft has a lint that this is unused, but without it Zed exits with
+      # snapcraft has a lint that this is unused, but without it LingCode exits with
       # "Missing Vulkan entry points: LibraryLoadFailure" in wgpu.
       - libvulkan1
-      # snapcraft has a lint that this is unused, but without it Zed exits with
+      # snapcraft has a lint that this is unused, but without it LingCode exits with
       # "NoWaylandLib" when run with Wayland.
       - libwayland-client0
       - libxcb1
@@ -52,8 +53,8 @@ parts:
       - -usr/share/man
 
 apps:
-  zed:
-    command: usr/bin/zed
-    common-id: dev.zed.Zed
+  lingcode:
+    command: usr/bin/lingcode
+    common-id: dev.lingcode.LingCode
     environment:
       ZED_BUNDLE_TYPE: snap

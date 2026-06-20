@@ -60,8 +60,8 @@ Done after the first successful Windows (aarch64-msvc) build:
   together); it is defined in code (id `zed`), so this is display-only and does not touch any asset file.
 - **Cloud paywall removed** — `CloudLanguageModelProvider` registration disabled in
   `crates/language_models/src/language_models.rs`, so the Zed Pro/Business/AI/Agent upsell UI no longer appears.
-- **Auto-update disabled** — `ZED_UPDATE_EXPLANATION` set at build time (see `build_lingcode.bat`); the app
-  won't phone home or update into upstream Zed.
+- **Auto-update — now wired to GitHub Releases** (was: disabled). See the dedicated section
+  "Auto-update via GitHub Releases" below. The old `ZED_UPDATE_EXPLANATION` build-time disable is removed.
 - **Binary renamed** — `crates/zed/Cargo.toml` bin target `zed` → `lingcode` (+ `default-run`), so the build
   produces `lingcode.exe`. The Rust *package* is still named `zed` (internal, not user-visible).
 - **Build fixes for this toolchain** — `.cargo/config.toml` adds `+fp16` to the Windows `target-feature`
@@ -83,6 +83,21 @@ Repointed/removed user-visible surfaces that revealed the upstream:
 - **Scattered visible strings** — agent upgrade prompt (`agent_ui/src/conversation_view.rs`), thread-rating
   consent (`thread_view.rs`), crash GPU context (`zed/src/reliability.rs`), OpenRouter `X-Title`/`HTTP-Referer`
   (`open_router.rs`, shown in the user's OpenRouter dashboard), debug-config placeholder (`debugger_ui`).
+- **Remaining reachable `zed.dev/docs` links** — repointed to `lingcode.dev/docs.html`: the Extensions-UI
+  suggestion table (~18 per-language/feature "learn more" links in `extensions_ui/src/extensions_ui.rs`),
+  the REPL help link (`zed/src/zed/quick_action_bar/repl_menu.rs`, `ZED_REPL_DOCUMENTATION` value; const name
+  kept — internal), and the Linux file-open error "See docs" button (`workspace/src/notifications.rs`).
+  (Still left, by the rules above: `zed.dev` links behind the disabled cloud/collab features, plus
+  comments, tests, and eval fixtures. Auto-update links were repointed when it was enabled — see below.)
+- **Linux packaging templates** (non-shipping for the Windows build, done for completeness) —
+  `resources/flatpak/zed.metainfo.xml.in`, `resources/snap/snapcraft.yaml.in`, `resources/zed.desktop.in`:
+  rebranded the app name / developer / description copy, repointed homepage/help/contact/source URLs to
+  `lingcode.dev`, set the snap package/app/command names + `common-id` to `lingcode` / `dev.lingcode.LingCode`,
+  and the `.desktop` `Keywords` + `x-scheme-handler/zed` → `x-scheme-handler/lingcode`. **Two URLs are
+  PLACEHOLDERS** (marked in-file): the snap release-tarball `source:` and the flatpak screenshot images point
+  to `lingcode.dev` paths that don't exist yet — a real Linux release artifact + marketing screenshots are
+  needed before a Linux package would build/publish. Left: `ZED_BUNDLE_TYPE` env (internal, binary reads it)
+  and the template file*names* (`zed.*.in`, build-script inputs, like the kept `zed_logo.svg`).
 
 ## Android tooling (new `lingcode_android` crate)
 
@@ -117,6 +132,30 @@ connected device via `installDebug`), AVD **create/delete** UI (needs text input
 form** with Keychain-stored credentials (currently the `.lingcode/play-deploy.json` config +
 project `signingConfigs`).
 
+## Project templates (new `lingcode_templates` crate)
+
+Adds a **New from Template** flow so users can start from a starter project instead of an empty
+folder (upstream Zed only opens existing folders). New crate `crates/lingcode_templates/` (mirrors
+the `lingcode_android` init+`register_action` pattern), wired via `lingcode_templates::init` in
+`crates/zed/src/main.rs`.
+
+- **Action:** `workspace::NewFromTemplate` (defined in the `workspace` crate next to `NewFile`, so the
+  welcome screen can reference it without a dependency cycle; the handler is registered from the new
+  crate via `workspace.register_action`).
+- **Entry points:** the **Welcome** screen "Get Started" section (`crates/workspace/src/welcome.rs`,
+  `Section<4>`→`Section<5>`, `IconName::FileCode`) and the **File** app menu ("New from Template…",
+  `crates/zed/src/zed/app_menus.rs`).
+- **Flow:** native multi-button prompt to pick a template → system folder picker for the parent dir →
+  scaffold into a fresh non-colliding `<slug>` directory (via the `fs` abstraction) → open it with
+  `open_workspace_for_paths`.
+- **Templates (embedded via `include_str!`, fully offline)** under `crates/lingcode_templates/templates/`:
+  **Python** (`main.py` + `pytest`), **Web / HTML5 game** (zero-dep canvas loop), **Android**
+  (Kotlin + Gradle, builds via the Android menu), **Node / TypeScript** (`tsc` + npm scripts). Add a
+  template by dropping files under `templates/<dir>/`, listing them with the `template_file!` macro, and
+  adding a `Template` entry.
+- **Known caveat:** the Android template omits the Gradle **wrapper jar** (a binary can't be embedded as
+  text), so its README instructs running `gradle wrapper` once before the Android-menu build commands.
+
 ## Intentionally NOT changed (and why)
 - **`zed:` action namespace (display)** — now de-branded everywhere it's shown: `debrand_action_name`
   is applied inside `command_palette::humanize_action_name`, which is the single function the command
@@ -146,7 +185,7 @@ project `signingConfigs`).
   visible); registries may key on them, so left to avoid breaking extension/registry fetches.
 - **Telemetry event names** ("Zed Agent …") — invisible unless inspecting telemetry; renaming breaks
   analytics continuity.
-- **`auto_update_helper` `Zed.exe` paths / logs** — auto-update is disabled; not exercised.
+- **`auto_update_helper`** — now rebranded and exercised (see "Auto-update via GitHub Releases" below).
 - **`appAppxFullName`** — cert-tied (see above).
 
 ## Mac-IDE parity additions
@@ -177,3 +216,170 @@ experience already reaches functional parity through Zed's native ACP agents (`c
   actions (Deploy / Connect / Disconnect / Open Backend Console / Share).
 - **Branded provider icons** — `IconName::{AiKimi, AiQwen, AiZai}` + `assets/icons/ai_{kimi,qwen,zai}.svg`;
   `open_ai_compatible.rs` `icon()` maps the preset ids to them (others keep the generic glyph).
+
+## Magic Install (new `lingcode_install` crate)
+
+Ports the macOS app's **Magic Install** (`Services/Deploy/MagicInstallService.swift`): detect the project's
+package manager(s) from marker files and run their install commands, streaming output into a modal. New crate
+`crates/lingcode_install/` mirrors the `lingcode_cloud` action+streaming-modal pattern, wired via
+`lingcode_install::init` in `crates/zed/src/main.rs` and an **Install Dependencies** item in the **Cloud** app
+menu (`crates/zed/src/zed/app_menus.rs`).
+
+- **Action:** `lingcode_install::MagicInstall` (registered on the workspace via `register_action`).
+- **Native, no CLI dependency** — unlike Cloud/Push (which delegate to the `lingcode` CLI), detection is just
+  marker-file existence checks and the install command is a plain subprocess, so it works even when the CLI
+  isn't on PATH. Spawns via Zed's cross-platform `util::command::new_std_command` (no `/bin/zsh` assumption);
+  `which::which` resolves Windows `.cmd`/`.bat` wrappers.
+- **Detection table** (`MANAGERS`): pnpm / yarn / bun / npm (lockfile suppression so generics don't double up),
+  cargo, poetry / pipenv / pip, go, bundler, composer, dotnet, maven, swift. Extend by adding a
+  `PackageManager` entry.
+- **Tests:** unit tests over the detect filter (suppression, multi-ecosystem, empty project) using a temp dir —
+  pure logic, no spawn (`tempfile` dev-dependency).
+- **Status:** code complete + `cargo metadata` validates the manifests; pending the ARM64 `build_lingcode.bat`
+  compile + a manual run before it's trusted.
+
+## Magic Push AI commit message
+
+Brings `lingcode_cloud::PushToGithub` in line with the macOS Magic Push (`Services/Deploy/MagicPushService.swift`),
+which generates a one-line commit message from the staged diff. **Editor-side change only** (in
+`crates/lingcode_cloud/src/lingcode_cloud.rs`):
+- `run_push` now passes `--ai-message` so the CLI generates the message when the user supplies none.
+- The `PushEvent::Commit.message` field (previously `#[allow(dead_code)]`) is surfaced in the modal:
+  `Committed N file(s): <message>`.
+
+**Companion CLI change required (separate `lingcode` repo, `src/github/push.ts`):** honor `--ai-message` by
+generating the commit message from `git diff --cached` and emitting it in the existing `commit` NDJSON event.
+The two must ship together — on a CLI that predates the flag the push will error on the unknown argument.
+
+## LingModel browser OAuth sign-in
+
+Ports the macOS app's "Sign In with Browser" flow (`LingCodeAuthService.swift`) so LingModel can be
+authenticated via a `lingcode://` OAuth round-trip instead of only a pasted API key. **Purely additive** — the
+pasted-key path is untouched and remains the fallback; both land the token in the same keychain slot
+(`ApiKeyState`), so all inference code is unchanged.
+
+- **Callback parsing** (`crates/zed/src/zed/open_listener.rs`) — new `OpenRequestKind::LingModelAuthCallback`
+  + a parse arm for `lingcode://auth/callback?code=…&state=…` (or `access_token=…` / `error=…`), with a unit
+  test. Dispatched in `crates/zed/src/main.rs`'s `handle_open_request` to `deliver_ling_model_auth`.
+- **Cross-crate bridge** (`crates/language_models/src/ling_model_auth.rs`, new) — a `LingModelAuthListener`
+  global (modeled on `client::RefreshLlmTokenListener`) that the provider subscribes to; the last callback is
+  buffered for late/cold-launch subscribers. Registered first in `language_models::init`.
+- **Provider** (`crates/language_models/src/provider/ling_model.rs`) — `State` gains a PKCE
+  `begin_browser_sign_in` (S256 via `sha2`, verifier/state via `rand`, base64url), an `on_auth_callback`
+  (state validation → direct `access_token` store, or `exchange_code` against the token endpoint via
+  `http_client`), and a **"Sign In with Browser"** button in the config view. New deps: `sha2`, `rand`, `url`.
+- **Endpoints to confirm before shipping:** `OAUTH_AUTHORIZE_URL`, `OAUTH_TOKEN_URL`, `OAUTH_CLIENT_ID`, and
+  whether the server returns `access_token` directly on the redirect or a `code` to exchange (both handled).
+- **Branding rule honored:** no user-visible string names the upstream vendor.
+- **Status:** code complete + `cargo metadata`/`cargo fmt` clean. **Higher verification risk than the Magic
+  items** (crypto + cross-crate gpui globals + async, none compiled here) — must build with
+  `build_lingcode.bat` and be exercised end-to-end (warm launch *and* cold launch) before it's trusted. The
+  changelog originally flagged this port as "large and risky"; the API-key fallback contains that risk.
+
+## Remote coding — client slice (host side staged)
+
+The macOS "remote coding" feature (drive the agent from a phone, zero setup) has no Windows equivalent: the
+serving component is macOS-native (`LingCodeServer` / `lingcode serve`, Darwin `NWListener`), so — unlike the
+cloud actions — the fork can't just spawn the CLI to host. Full host support is **new networked Rust**
+(estimated weeks); the file-level staged plan is in **`REMOTE-CODING-PLAN.md`**.
+
+Shipped now (the tractable, working *client* half):
+- **`lingcode_cloud::OpenRemoteControl`** — opens `https://lingcode.dev/remote-control.html`
+  (`crates/lingcode_cloud/src/lingcode_cloud.rs`), so a Windows user can drive their *other* LingCode hosts
+  from the web client (the relay + web UI are already deployed and platform-independent). One-liner action in
+  the existing crate, mirroring `OpenBackendConsole`. Menu: **Cloud → Remote Control (Web)**
+  (`crates/zed/src/zed/app_menus.rs`).
+- Not yet done: making *this* Windows machine a drivable **host** (the agent HTTP+SSE server + relay bridge) —
+  see the plan. Deliberately staged rather than written blind.
+
+### Host server lifecycle (new `lingcode_remote` crate)
+
+Key realization: the Windows **`lingcode` CLI already ships a complete cross-platform headless server**
+(`lingcode serve` — sessions, SSE event streams, permissions, PTY, files). So the Windows host does **not**
+need a from-scratch Rust HTTP/SSE server (the macOS Swift `LingCodeServer`/`NWListener` is Apple-only and
+unusable here); it just manages the CLI server's lifecycle — the same "delegate to the CLI" approach as
+`lingcode_cloud`.
+
+New crate `crates/lingcode_remote/`, wired via `lingcode_remote::init` in `crates/zed/src/main.rs` and the
+**Cloud** app menu (`Start Remote Server` / `Stop Remote Server`).
+- **Actions** `lingcode_remote::{StartRemoteServer, StopRemoteServer}`.
+- **Start** spawns `lingcode serve` (via `util::command::new_std_command` + `util::process::Child`), parses the
+  `listening on http://host:port` line for the address, and opens a status modal. The running process is held
+  in a **gpui global** so it survives the modal being closed (`StopRemoteServer` / the modal's Stop button
+  `Child::kill()`s it). On exit it surfaces a hint to run `lingcode serve` in a terminal (e.g. not signed in).
+- **Zero-setup phone reach is now wired:** the crate spawns **`lingcode remote`** (not bare `lingcode serve`),
+  the new CLI command that registers this machine as a relay host, starts a private loopback server, and
+  tunnels the hosted relay to it — so the web remote-control reaches it with no SSH/port config. (The relay
+  bridge was built once in the cross-platform CLI so Mac and Windows share it — see below.)
+- **Status:** code complete + `cargo metadata`/`cargo fmt` clean; pending the ARM64 `build_lingcode.bat`
+  compile + a run.
+
+### Relay bridge — `lingcode remote` (in the cross-platform CLI)
+
+Closes the zero-setup gap. **Faithful port of the macOS app's `collab-bridge/bridge.mjs` serve-host logic**
+into the Bun/TS `lingcode` CLI (a separate repo), so both platforms share one bridge:
+- `packages/lingcode/src/remote/serve-tunnel.ts` — joins the relay room's `__serve` doc over y-websocket,
+  announces `lc-serve-host-hello`, and answers `lc-serve-request` frames by proxying to the loopback server,
+  streaming back `lc-serve-response-head`/`-chunk`/`-close`/`-error` (verbatim protocol from the Mac bridge,
+  incl. the binary-JSON-frame trick that avoids the Yjs decoder).
+- `packages/lingcode/src/cli/cmd/remote.ts` — `lingcode remote`: registers via `POST /api/remote/hosts`
+  (LingCode Cloud token), starts a private loopback `lingcode serve --hostname 127.0.0.1` (per-run password;
+  the tunnel authenticates with the matching `ServerAuth` Basic header), then runs the tunnel until Ctrl-C.
+- New deps `yjs` / `y-websocket` / `ws` (Mac bridge versions); wired into `src/index.ts`.
+- **Status:** typechecks clean except the three new imports (need `bun install`); the logic is a faithful port
+  but **needs `bun install` + a live relay + sign-in to verify end-to-end** (none runnable in this session).
+
+## Auto-update via GitHub Releases
+
+Upstream Zed auto-updates from its own release server (`/releases/{channel}/{version}/asset` on
+`cloud.zed.dev`). LingCode runs no such server — its pipeline (`.github/workflows/lingcode-release.yml`)
+only builds the Windows installer and publishes it as a **GitHub Release** asset. So the built-in updater
+was rewired to use GitHub Releases instead of Zed's protocol. (Before this, the updater was compiled in for
+release builds but pointed at Zed's server — i.e. it could have updated *into* upstream Zed.)
+
+- **Discovery** (`crates/auto_update/src/auto_update.rs`) — new `AutoUpdater::get_github_release_asset`
+  queries `https://api.github.com/repos/Xavierhuang/lingcode_window_IDE/releases/latest`, parses
+  `tag_name` (strips the leading `v` for semver compare) and picks the asset named `LingCode-<arch>.exe`
+  (`x86_64` / `aarch64`). `update()` now calls it instead of `get_release_asset` (the Zed-cloud path).
+  `get_release_asset` is kept (still used by the remote-server download). The User-Agent the GitHub API
+  requires is already attached by the reqwest client's `default_headers`.
+- **Install** — unchanged and already installer-based: `install_release_windows` runs the downloaded
+  `LingCode-<arch>.exe` with `/verysilent /update=true`. The installer's `/update` mode (see `zed.iss`
+  `GetInstallDir`) stages the new files into `<app>\install\`, then on quit `auto_update_helper.exe`
+  swaps them over the live files.
+- **Helper rebrand** (`crates/auto_update_helper/`) — the file-swap job list was stale (`Zed.exe`,
+  `bin\Zed.exe`, `bin\zed`). Rewritten to the real LingCode layout: root `LingCode.exe` and CLI
+  `bin\zed.exe` (the no-ext `bin\zed` entries removed; `JOBS` is now `[Job; 20]`). Also the relaunch
+  target, the `release_file_handles` list, and the progress-dialog title (`"Zed"` → `"LingCode"`).
+- **Enablement** — removed the `ZED_UPDATE_EXPLANATION` build-time disable from `build_lingcode.bat` /
+  `check_lingcode.bat` (release builds via `bundle-windows.ps1` never set it, so they were already
+  enabled). Release-notes/announcement links repointed to the GitHub releases page / `lingcode.dev`.
+
+**The two operational requirements are now enforced in the release workflow** (`lingcode-release.yml`),
+so they don't depend on remembering them:
+- **Published, not draft** — the "Create GitHub Release" step is `draft: false` so `releases/latest`
+  serves it. Non-stable channels are marked `prerelease: true` (via a new `channel` step output) so they
+  stay OUT of `releases/latest` and stable users don't update onto a nightly/preview.
+- **Naming contract enforced** — the "Locate installer" step now requires the exact
+  `LingCode-<arch>.exe` name and fails the build otherwise (the installer's `AppSetupName` already
+  produces it; this just guarantees it can't silently drift to a name the updater won't match).
+- Release **tags must be semver** (`vX.Y.Z`); repo is hardcoded `Xavierhuang/lingcode_window_IDE`
+  (`LINGCODE_GITHUB_REPO`), change there if it moves.
+
+**Verification status: NOT run.** None of this compiled or ran in this session. Highest-risk piece is the
+`auto_update_helper` `JOBS` layout — it must match what the installer's `/update` mode actually stages into
+`install\`; confirm with **one real end-to-end update** (install vN, publish vN+1, let it update) before
+relying on it. The `test_auto_update_downloads` unit test was updated to mock the GitHub API shape.
+
+### Release-pipeline rebrand fixes (binary rename fallout)
+
+The `zed` → `lingcode` bin rename left two stale references that broke the Linux release job and the
+Windows CLI launcher:
+- **`script/bundle-linux`** — `find_libs` ran `ldd .../release/zed` (now `release/lingcode`) and `tar`
+  packed `zed$suffix.app` while the staged dir is `LingCode$suffix.app` (now matched). The `.desktop`
+  generation was also still Zed-branded and pointed `Exec`/`Icon` at a non-existent `zed` binary — now
+  `APP_CLI=lingcode`, `APP_NAME=LingCode`, `APP_ID=dev.lingcode.LingCode*`, icons installed as
+  `lingcode.png`. (`libexec/zed-editor` kept — the CLI launcher hardcodes that internal name.)
+- **`crates/cli/src/main.rs`** — the Windows `detect()` looked for `../Zed.exe`; the installed app is
+  `LingCode.exe`, so the `lingcode` terminal command couldn't find the editor. Now `../LingCode.exe`
+  (dev fallback `./lingcode.exe`).

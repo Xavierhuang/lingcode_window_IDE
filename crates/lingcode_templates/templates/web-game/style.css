@@ -1,0 +1,17 @@
+body {
+  margin: 0;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  background: #07070f;
+  color: #cfd0e0;
+  font-family: system-ui, sans-serif;
+}
+canvas {
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(138, 124, 255, 0.25);
+}
+.hint {
+  opacity: 0.7;
+  font-size: 14px;
+}

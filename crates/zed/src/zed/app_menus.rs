@@ -109,6 +109,7 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
             disabled: false,
             items: vec![
                 MenuItem::action("New", workspace::NewFile),
+                MenuItem::action("New from Template...", workspace::NewFromTemplate),
                 MenuItem::action("New Window", workspace::NewWindow),
                 MenuItem::separator(),
                 #[cfg(not(target_os = "macos"))]
@@ -288,6 +289,8 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
             disabled: false,
             items: vec![
                 MenuItem::action("Deploy to Cloud", lingcode_cloud::DeployToCloud),
+                MenuItem::action("Push to GitHub", lingcode_cloud::PushToGithub),
+                MenuItem::action("Install Dependencies", lingcode_install::MagicInstall),
                 MenuItem::separator(),
                 MenuItem::action("Connect Backend", lingcode_cloud::ConnectBackend),
                 MenuItem::action("Disconnect Backend", lingcode_cloud::DisconnectBackend),
@@ -297,6 +300,10 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
                     "Share Project & Collaborators",
                     lingcode_cloud::ShareCloudProject,
                 ),
+                MenuItem::separator(),
+                MenuItem::action("Remote Control (Web)", lingcode_cloud::OpenRemoteControl),
+                MenuItem::action("Start Remote Server", lingcode_remote::StartRemoteServer),
+                MenuItem::action("Stop Remote Server", lingcode_remote::StopRemoteServer),
             ],
         },
         Menu {

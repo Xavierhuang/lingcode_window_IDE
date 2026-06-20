@@ -110,6 +110,9 @@ members = [
     "crates/journal",
     "crates/lingcode_android",
     "crates/lingcode_cloud",
+    "crates/lingcode_install",
+    "crates/lingcode_remote",
+    "crates/lingcode_templates",
     "crates/json_schema_store",
     "crates/keymap_editor",
     "crates/language",
@@ -367,6 +370,9 @@ install_cli = { path = "crates/install_cli" }
 journal = { path = "crates/journal" }
 lingcode_android = { path = "crates/lingcode_android" }
 lingcode_cloud = { path = "crates/lingcode_cloud" }
+lingcode_install = { path = "crates/lingcode_install" }
+lingcode_remote = { path = "crates/lingcode_remote" }
+lingcode_templates = { path = "crates/lingcode_templates" }
 json_schema_store = { path = "crates/json_schema_store" }
 keymap_editor = { path = "crates/keymap_editor" }
 language = { path = "crates/language" }

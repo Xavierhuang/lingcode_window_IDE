@@ -285,6 +285,8 @@ actions!(
         MoveFocusedPanelToNextPosition,
         /// Creates a new file.
         NewFile,
+        /// Scaffolds a new project from a starter template.
+        NewFromTemplate,
         /// Creates a new file in a vertical split.
         NewFileSplitVertical,
         /// Creates a new file in a horizontal split.

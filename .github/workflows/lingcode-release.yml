@@ -72,10 +72,12 @@ jobs:
             -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force | Out-Null
 
       - name: Select release channel
+        id: channel
         shell: pwsh
         run: |
           $channel = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ github.event.inputs.channel }}" } else { "stable" }
           Set-Content -Path "crates/zed/RELEASE_CHANNEL" -Value $channel -NoNewline
+          "channel=$channel" >> $env:GITHUB_OUTPUT
           Write-Host "Building channel: $channel"
 
       - name: Install Rust (pinned by rust-toolchain.toml)
@@ -104,8 +106,16 @@ jobs:
         id: artifact
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path "target" -Filter "LingCode-*.exe" -File | Select-Object -First 1
-          if (-not $exe) { Write-Error "No installer produced under target/"; exit 1 }
+          # NAMING CONTRACT: the auto-updater matches this asset name EXACTLY
+          # (crates/auto_update get_github_release_asset -> "LingCode-<arch>.exe").
+          # Fail loudly if the installer isn't named as expected, rather than
+          # publishing an asset clients can't find.
+          $expected = "LingCode-${{ matrix.arch }}.exe"
+          $exe = Get-ChildItem -Path "target" -Recurse -Filter $expected -File | Select-Object -First 1
+          if (-not $exe) {
+            Write-Error "Expected installer '$expected' not found under target/. The auto-update naming contract requires this exact name (set via AppSetupName in script/bundle-windows.ps1)."
+            exit 1
+          }
           Write-Host "Installer: $($exe.FullName) ($([math]::Round($exe.Length/1MB,1)) MB)"
           "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
           "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
@@ -122,7 +132,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.artifact.outputs.path }}
-          draft: true
+          # Published (not draft) so GitHub's releases/latest serves it to the
+          # auto-updater. Non-stable channels are marked prerelease so they stay
+          # OUT of releases/latest and stable users don't update onto them.
+          draft: false
+          prerelease: ${{ steps.channel.outputs.channel != 'stable' }}
           generate_release_notes: true
           body: |
             LingCode ${{ github.ref_name }} for Windows (${{ matrix.arch }}).
@@ -149,10 +163,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Select release channel
+        id: channel
         shell: bash
         run: |
           channel="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.channel || 'stable' }}"
           printf '%s' "$channel" > crates/zed/RELEASE_CHANNEL
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "Building channel: $channel"
 
       - name: Install Linux build dependencies (script/linux)
@@ -194,7 +210,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.artifact.outputs.path }}
-          draft: true
+          # Keep consistent with the Windows job (same tag/release): published, with
+          # prerelease tracking the channel, so the draft state can't flip-flop by job order.
+          draft: false
+          prerelease: ${{ steps.channel.outputs.channel != 'stable' }}
           generate_release_notes: true
           body: |
             LingCode ${{ github.ref_name }} for Linux (x86_64).

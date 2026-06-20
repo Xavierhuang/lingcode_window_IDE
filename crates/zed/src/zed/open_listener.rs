@@ -76,6 +76,10 @@ pub enum OpenRequestKind {
     GitCommit {
         sha: String,
     },
+    /// A `lingcode://auth/callback` redirect from the LingModel browser sign-in.
+    LingModelAuthCallback {
+        callback: language_models::LingModelAuthCallback,
+    },
 }
 
 impl std::fmt::Debug for OpenRequestKind {
@@ -113,8 +117,27 @@ impl std::fmt::Debug for OpenRequestKind {
                 .field("repo_url", repo_url)
                 .finish(),
             Self::GitCommit { sha } => f.debug_struct("GitCommit").field("sha", sha).finish(),
+            Self::LingModelAuthCallback { .. } => write!(f, "LingModelAuthCallback(..)"),
         }
     }
+}
+
+/// Parse the query of a `lingcode://auth/callback` URL into the LingModel
+/// sign-in payload. Unknown/missing params are simply left `None`.
+fn parse_ling_model_auth_callback(url: &str) -> language_models::LingModelAuthCallback {
+    let mut callback = language_models::LingModelAuthCallback::default();
+    if let Ok(parsed) = url::Url::parse(url) {
+        for (key, value) in parsed.query_pairs() {
+            match key.as_ref() {
+                "code" => callback.code = Some(value.into_owned()),
+                "state" => callback.state = Some(value.into_owned()),
+                "access_token" => callback.access_token = Some(value.into_owned()),
+                "error" => callback.error = Some(value.into_owned()),
+                _ => {}
+            }
+        }
+    }
+    callback
 }
 
 impl OpenRequest {
@@ -181,6 +204,10 @@ impl OpenRequest {
                 this.parse_git_clone_url(clone_path)?
             } else if let Some(commit_path) = url.strip_prefix("lingcode://git/commit/") {
                 this.parse_git_commit_url(commit_path)?
+            } else if url.starts_with("lingcode://auth/callback") {
+                this.kind = Some(OpenRequestKind::LingModelAuthCallback {
+                    callback: parse_ling_model_auth_callback(&url),
+                });
             } else if url.starts_with("ssh://") {
                 this.parse_ssh_file_path(&url, cx)?
             } else if let Some(zed_link) = parse_zed_link(&url, cx) {
@@ -1549,7 +1576,8 @@ mod tests {
             OpenRequest::parse(
                 RawOpenRequest {
                     urls: vec![
-                        "lingcode://git/clone/?repo=https://github.com/zed-industries/zed.git".into(),
+                        "lingcode://git/clone/?repo=https://github.com/zed-industries/zed.git"
+                            .into(),
                     ],
                     ..Default::default()
                 },
@@ -1574,7 +1602,8 @@ mod tests {
             OpenRequest::parse(
                 RawOpenRequest {
                     urls: vec![
-                        "lingcode://git/clone?repo=https://github.com/zed-industries/zed.git".into(),
+                        "lingcode://git/clone?repo=https://github.com/zed-industries/zed.git"
+                            .into(),
                     ],
                     ..Default::default()
                 },
@@ -1614,6 +1643,32 @@ mod tests {
                 assert_eq!(repo_url, "https://github.com/zed-industries/zed.git");
             }
             _ => panic!("Expected GitClone kind"),
+        }
+    }
+
+    #[gpui::test]
+    fn test_parse_ling_model_auth_callback(cx: &mut TestAppContext) {
+        let _app_state = init_test(cx);
+
+        let request = cx.update(|cx| {
+            OpenRequest::parse(
+                RawOpenRequest {
+                    urls: vec!["lingcode://auth/callback?code=abc123&state=xyz".into()],
+                    ..Default::default()
+                },
+                cx,
+            )
+            .unwrap()
+        });
+
+        match request.kind {
+            Some(OpenRequestKind::LingModelAuthCallback { callback }) => {
+                assert_eq!(callback.code.as_deref(), Some("abc123"));
+                assert_eq!(callback.state.as_deref(), Some("xyz"));
+                assert!(callback.access_token.is_none());
+                assert!(callback.error.is_none());
+            }
+            _ => panic!("Expected LingModelAuthCallback kind"),
         }
     }
 

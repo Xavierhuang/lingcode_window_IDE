@@ -11,11 +11,17 @@
 //! from `AllLanguageModelSettings` and adds no settings plumbing.
 
 use anthropic::{AnthropicError, AnthropicModelMode};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+use base64::Engine as _;
 use credentials_provider::CredentialsProvider;
-use futures::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
-use gpui::{AnyView, App, AsyncApp, Context, Entity, SharedString, Task};
-use http_client::HttpClient;
+use futures::{AsyncReadExt as _, FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
+use gpui::{AnyView, App, AsyncApp, Context, Entity, SharedString, Subscription, Task};
+use http_client::{AsyncBody, HttpClient, Request as HttpRequest};
+use rand::Rng as _;
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
+
+use crate::ling_model_auth::{LingModelAuthCallback, LingModelAuthEvent, LingModelAuthListener};
 use language_model::{
     ApiKeyState, AuthenticateError, ConfigurationViewTargetAgent, EnvVar, IconOrSvg, LanguageModel,
     LanguageModelCacheConfiguration, LanguageModelCompletionError, LanguageModelCompletionEvent,
@@ -39,6 +45,31 @@ const LINGMODEL_API_URL: &str = "https://lingcode.dev/api/inference/anthropic";
 
 const API_KEY_ENV_VAR_NAME: &str = "LINGMODEL_API_KEY";
 static API_KEY_ENV_VAR: LazyLock<EnvVar> = env_var!(API_KEY_ENV_VAR_NAME);
+
+// ── Browser OAuth sign-in ────────────────────────────────────────────────────
+//
+// Mirrors the macOS app's "Sign In with Browser" flow: open the LingCode
+// authorize page with PKCE, receive the `lingcode://auth/callback` redirect
+// (parsed in the `zed` crate, routed here via `LingModelAuthListener`), and
+// store the resulting access token in the same keychain slot the pasted-API-key
+// path uses — so all inference code is unchanged. The API-key path remains as a
+// fallback; OAuth is purely additive.
+//
+// Endpoints/client_id are LingCode-hosted; confirm them against the server
+// before shipping. The server may either redirect with `access_token` directly
+// (handled with no extra request) or with a `code` to exchange (handled below).
+const OAUTH_AUTHORIZE_URL: &str = "https://lingcode.dev/oauth/authorize";
+const OAUTH_TOKEN_URL: &str = "https://lingcode.dev/oauth/token";
+const OAUTH_CLIENT_ID: &str = "lingcode-ide";
+const OAUTH_REDIRECT_URI: &str = "lingcode://auth/callback";
+
+/// In-flight PKCE sign-in: the random `state` we expect echoed back and the
+/// code `verifier` to present at token exchange. Lives only in memory, so an app
+/// restart mid-flow falls back to the direct-token path (no verifier to exchange).
+struct PendingAuth {
+    state: String,
+    verifier: String,
+}
 
 /// The single managed LingModel model. Tier routing (free/pro) happens
 /// server-side based on the authenticated account, so the client exposes one
@@ -65,11 +96,134 @@ pub struct LingModelLanguageModelProvider {
 pub struct State {
     api_key_state: ApiKeyState,
     credentials_provider: Arc<dyn CredentialsProvider>,
+    http_client: Arc<dyn HttpClient>,
+    pending: Option<PendingAuth>,
+    _auth_subscription: Option<Subscription>,
 }
 
 impl State {
+    fn new(
+        http_client: Arc<dyn HttpClient>,
+        credentials_provider: Arc<dyn CredentialsProvider>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        // Subscribe to browser-OAuth callbacks routed in from the `zed` crate.
+        // `try_global` (not `global`) so a provider built outside the normal
+        // `language_models::init` path — e.g. a test — degrades to API-key-only
+        // rather than panicking on a missing global.
+        let _auth_subscription = LingModelAuthListener::try_global(cx).map(|listener| {
+            let subscription = cx.subscribe(
+                &listener,
+                |state, _listener, event: &LingModelAuthEvent, cx| {
+                    state.on_auth_callback(event.0.clone(), cx);
+                },
+            );
+
+            // Drain a callback that may have been buffered before this
+            // subscription existed (e.g. a cold launch where the OS delivered the
+            // URL first).
+            if let Some(buffered) = listener.update(cx, |listener, _| listener.take_last()) {
+                let handle = cx.entity();
+                cx.defer(move |cx| {
+                    handle.update(cx, |state, cx| state.on_auth_callback(buffered, cx));
+                });
+            }
+
+            subscription
+        });
+
+        Self {
+            api_key_state: ApiKeyState::new(
+                LingModelLanguageModelProvider::api_url(),
+                (*API_KEY_ENV_VAR).clone(),
+            ),
+            credentials_provider,
+            http_client,
+            pending: None,
+            _auth_subscription,
+        }
+    }
+
     fn is_authenticated(&self) -> bool {
         self.api_key_state.has_key()
+    }
+
+    /// Begin the browser PKCE sign-in: generate `state` + verifier/challenge,
+    /// remember them, and open the authorize page in the user's browser.
+    fn begin_browser_sign_in(&mut self, cx: &mut Context<Self>) {
+        let mut verifier_bytes = [0u8; 32];
+        rand::rng().fill(&mut verifier_bytes);
+        let mut state_bytes = [0u8; 16];
+        rand::rng().fill(&mut state_bytes);
+        let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let verifier = engine.encode(verifier_bytes);
+        let challenge = engine.encode(Sha256::digest(verifier.as_bytes()));
+        let state = engine.encode(state_bytes);
+
+        let url = format!(
+            "{OAUTH_AUTHORIZE_URL}?response_type=code&client_id={OAUTH_CLIENT_ID}\
+             &redirect_uri={redirect}&code_challenge={challenge}\
+             &code_challenge_method=S256&state={state}",
+            redirect = OAUTH_REDIRECT_URI,
+        );
+
+        self.pending = Some(PendingAuth { state, verifier });
+        cx.open_url(&url);
+    }
+
+    /// Handle a parsed `lingcode://auth/callback`. Validates `state` against the
+    /// in-flight request, then either stores a directly-returned `access_token`
+    /// or exchanges the `code` for one. Always lands the token in the shared
+    /// `ApiKeyState` keychain slot, so inference is unchanged.
+    fn on_auth_callback(&mut self, callback: LingModelAuthCallback, cx: &mut Context<Self>) {
+        if let Some(error) = callback.error {
+            log::error!("LingModel sign-in failed: {error}");
+            self.pending = None;
+            return;
+        }
+
+        // If we have an in-flight request, the returned state must match. (A
+        // cold-launch buffered callback may have no pending request; the direct
+        // token path below is still safe because the token itself is the secret.)
+        if let Some(pending) = self.pending.as_ref() {
+            match callback.state.as_deref() {
+                Some(state) if state == pending.state => {}
+                _ => {
+                    log::error!("LingModel sign-in: state mismatch; ignoring callback");
+                    return;
+                }
+            }
+        }
+
+        if let Some(token) = callback.access_token {
+            self.store_token(token, cx);
+            self.pending = None;
+            return;
+        }
+
+        let Some(code) = callback.code else {
+            log::error!("LingModel sign-in: callback had neither access_token nor code");
+            return;
+        };
+        let Some(pending) = self.pending.take() else {
+            log::error!(
+                "LingModel sign-in: received an authorization code with no pending verifier \
+                 (app restarted mid-flow?); ask the user to sign in again"
+            );
+            return;
+        };
+
+        let http_client = self.http_client.clone();
+        cx.spawn(async move |this, cx| {
+            let token = exchange_code(http_client, &code, &pending.verifier).await?;
+            this.update(cx, |state, cx| state.store_token(token, cx))?;
+            anyhow::Ok(())
+        })
+        .detach_and_log_err(cx);
+    }
+
+    fn store_token(&mut self, token: String, cx: &mut Context<Self>) {
+        self.set_api_key(Some(token), cx).detach_and_log_err(cx);
     }
 
     fn set_api_key(&mut self, api_key: Option<String>, cx: &mut Context<Self>) -> Task<Result<()>> {
@@ -100,10 +254,7 @@ impl LingModelLanguageModelProvider {
         credentials_provider: Arc<dyn CredentialsProvider>,
         cx: &mut App,
     ) -> Self {
-        let state = cx.new(|_cx| State {
-            api_key_state: ApiKeyState::new(Self::api_url(), (*API_KEY_ENV_VAR).clone()),
-            credentials_provider,
-        });
+        let state = cx.new(|cx| State::new(http_client.clone(), credentials_provider, cx));
 
         Self { http_client, state }
     }
@@ -334,6 +485,46 @@ impl LanguageModel for LingModelModel {
     }
 }
 
+/// Exchange a PKCE authorization code for a LingModel access token.
+async fn exchange_code(
+    http_client: Arc<dyn HttpClient>,
+    code: &str,
+    verifier: &str,
+) -> Result<String> {
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", "authorization_code")
+        .append_pair("code", code)
+        .append_pair("redirect_uri", OAUTH_REDIRECT_URI)
+        .append_pair("client_id", OAUTH_CLIENT_ID)
+        .append_pair("code_verifier", verifier)
+        .finish();
+
+    let request = HttpRequest::builder()
+        .method("POST")
+        .uri(OAUTH_TOKEN_URL)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("Accept", "application/json")
+        .body(AsyncBody::from(body.into_bytes()))?;
+
+    let mut response = http_client.send(request).await?;
+    let mut text = String::new();
+    response.body_mut().read_to_string(&mut text).await?;
+    if !response.status().is_success() {
+        return Err(anyhow!(
+            "LingModel token exchange failed ({}): {text}",
+            response.status()
+        ));
+    }
+
+    #[derive(Deserialize)]
+    struct TokenResponse {
+        access_token: String,
+    }
+    let parsed: TokenResponse = serde_json::from_str(&text)
+        .map_err(|err| anyhow!("LingModel token response was not valid JSON: {err}"))?;
+    Ok(parsed.access_token)
+}
+
 struct ConfigurationView {
     api_key_editor: Entity<InputField>,
     state: Entity<State>,
@@ -388,6 +579,11 @@ impl ConfigurationView {
         .detach_and_log_err(cx);
     }
 
+    fn sign_in(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.state
+            .update(cx, |state, cx| state.begin_browser_sign_in(cx));
+    }
+
     fn reset_api_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.api_key_editor
             .update(cx, |editor, cx| editor.set_text("", window, cx));
@@ -422,7 +618,17 @@ impl Render for ConfigurationView {
         } else if self.should_render_editor(cx) {
             v_flex()
                 .size_full()
+                .gap_2()
                 .on_action(cx.listener(Self::save_api_key))
+                .child(
+                    Button::new("lingmodel-sign-in", "Sign In with Browser")
+                        .on_click(cx.listener(|this, _, window, cx| this.sign_in(window, cx))),
+                )
+                .child(
+                    Label::new("or use an API key instead:")
+                        .size(LabelSize::Small)
+                        .color(Color::Muted),
+                )
                 .child(Label::new(
                     "To use LingModel, add your LingCode API key:",
                 ))

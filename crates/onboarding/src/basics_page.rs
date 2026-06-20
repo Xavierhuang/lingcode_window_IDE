@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use client::{Client, TelemetrySettings, UserStore, zed_urls};
+use client::{Client, TelemetrySettings, UserStore};
 use cloud_api_types::Plan;
 use collections::HashMap;
 use fs::Fs;
@@ -584,7 +584,7 @@ fn render_registry_agent_button(
         })
 }
 
-fn render_zed_agent_button(user_store: &Entity<UserStore>, cx: &mut App) -> impl IntoElement {
+fn render_lingcode_agent_button(user_store: &Entity<UserStore>, cx: &mut App) -> impl IntoElement {
     let client = Client::global(cx);
     let status = *client.status().borrow();
 
@@ -630,7 +630,7 @@ fn render_zed_agent_button(user_store: &Entity<UserStore>, cx: &mut App) -> impl
             .into_any_element()
     };
 
-    AgentSetupButton::new("zed-agent-onboarding")
+    AgentSetupButton::new("lingcode-agent-onboarding")
         .icon(
             Icon::new(IconName::ZedAgent)
                 .size(IconSize::XSmall)
@@ -639,20 +639,12 @@ fn render_zed_agent_button(user_store: &Entity<UserStore>, cx: &mut App) -> impl
         .name("LingCode Agent")
         .state(state_element)
         .disabled(is_trial || is_pro)
-        .map(|this| {
-            if is_signed_in && is_free {
-                this.on_click(move |_, _window, cx| {
-                    telemetry::event!("Start Trial Clicked", state = "post-sign-in");
-                    cx.open_url(&zed_urls::start_trial_url(cx))
-                })
-            } else {
-                this.on_click(move |_, _, cx| {
-                    telemetry::event!("Welcome Zed Agent Sign In Clicked");
-                    let client = Client::global(cx);
-                    cx.spawn(async move |cx| client.sign_in_with_optional_connect(true, cx).await)
-                        .detach_and_log_err(cx);
-                })
-            }
+        .on_click(move |_, _, cx| {
+            // LingCode: the LingCode Agent authenticates via the LingModel API
+            // key from the lingcode.dev account page — not the upstream Zed
+            // collab account on zed.dev. Send users there to get their key.
+            telemetry::event!("LingCode Agent Sign In Clicked");
+            cx.open_url("https://lingcode.dev/account.html");
         })
 }
 
@@ -675,7 +667,7 @@ fn render_ai_section(user_store: &Entity<UserStore>, cx: &mut App) -> impl IntoE
             .grid()
             .grid_cols(column_count)
             .gap_2()
-            .child(render_zed_agent_button(user_store, cx)),
+            .child(render_lingcode_agent_button(user_store, cx)),
         |grid, agent_id| {
             let Some(agent) = registry_agents
                 .iter()
