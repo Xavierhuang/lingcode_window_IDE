@@ -45,6 +45,7 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
         MenuItem::action("Collab Panel", collab_panel::ToggleFocus),
         MenuItem::action("Terminal Panel", terminal_panel::ToggleFocus),
         MenuItem::action("Debugger Panel", debug_panel::ToggleFocus),
+        MenuItem::action("Logcat Panel", lingcode_android::ToggleLogcat),
         MenuItem::separator(),
         MenuItem::action("Diagnostics", diagnostics::Deploy),
         MenuItem::separator(),

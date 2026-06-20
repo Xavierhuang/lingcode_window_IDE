@@ -18,8 +18,8 @@ use std::{
 use anyhow::{Context as _, Result, anyhow, bail};
 use futures::{AsyncBufReadExt as _, AsyncReadExt as _, StreamExt as _};
 use gpui::{
-    App, AppContext as _, Context, DismissEvent, EventEmitter, FocusHandle, Focusable, Render,
-    SharedString, Task, Window, actions,
+    App, AppContext as _, AsyncWindowContext, Context, DismissEvent, Entity, EventEmitter,
+    FocusHandle, Focusable, Pixels, Render, SharedString, Task, WeakEntity, Window, actions, px,
 };
 use http_client::{AsyncBody, HttpClient, Method, Request as HttpRequest};
 use serde::Deserialize;
@@ -53,6 +53,8 @@ actions!(
         AndroidAnalyzeApk,
         /// Compare two APK/AAB files (size delta + aapt2 badging diff).
         AndroidApkDiff,
+        /// Toggle the dockable Logcat panel (live `adb logcat` stream).
+        ToggleLogcat,
         /// Build the release bundle and upload it to Google Play (Play Developer API).
         AndroidDeployToPlay,
         /// Open the Google Play Console in your browser.
@@ -102,6 +104,9 @@ pub fn init(app_state: Arc<AppState>, cx: &mut App) {
             });
             workspace.register_action(|workspace, _: &AndroidApkDiff, window, cx| {
                 apk_diff(workspace, window, cx);
+            });
+            workspace.register_action(|workspace, _: &ToggleLogcat, window, cx| {
+                workspace.toggle_panel_focus::<LogcatPanel>(window, cx);
             });
             workspace.register_action(|_workspace, _: &AndroidOpenPlayConsole, _window, cx| {
                 cx.open_url(PLAY_CONSOLE_URL);
@@ -1189,5 +1194,163 @@ impl Render for AndroidModal {
             .child(Label::new(self.title.clone()).size(LabelSize::Large))
             .child(log)
             .child(footer)
+    }
+}
+
+// ── Dockable Logcat panel ────────────────────────────────────────────────────
+//
+// A real dock panel (bottom by default) that streams `adb logcat` live, unlike
+// the modal Logcat action. Loaded in `crates/zed/src/zed.rs` initialize_panels;
+// toggled via `lingcode_android::ToggleLogcat`.
+
+const LOGCAT_PANEL_KEY: &str = "LogcatPanel";
+
+pub struct LogcatPanel {
+    focus_handle: FocusHandle,
+    position: workspace::dock::DockPosition,
+    lines: Vec<SharedString>,
+    _task: Option<Task<()>>,
+}
+
+impl LogcatPanel {
+    pub async fn load(
+        workspace: WeakEntity<Workspace>,
+        mut cx: AsyncWindowContext,
+    ) -> Result<Entity<Self>> {
+        workspace.update_in(&mut cx, |_workspace, window, cx| {
+            cx.new(|cx| LogcatPanel::new(window, cx))
+        })
+    }
+
+    fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let mut this = Self {
+            focus_handle: cx.focus_handle(),
+            position: workspace::dock::DockPosition::Bottom,
+            lines: Vec::new(),
+            _task: None,
+        };
+        this.restart(cx);
+        this
+    }
+
+    fn push_line(&mut self, line: String, cx: &mut Context<Self>) {
+        self.lines.push(line.into());
+        if self.lines.len() > 5000 {
+            self.lines.drain(0..1000);
+        }
+        cx.notify();
+    }
+
+    fn restart(&mut self, cx: &mut Context<Self>) {
+        let Some(adb) = adb_path(android_sdk().as_deref()) else {
+            self.push_line(
+                "adb not found — install the Android SDK platform-tools.".to_string(),
+                cx,
+            );
+            return;
+        };
+        self.lines.clear();
+        let task = cx.spawn(async move |this, cx| {
+            let Some(serial) = first_device_serial(&adb).await else {
+                this.update(cx, |this, cx| {
+                    this.push_line("No connected device or emulator.".to_string(), cx)
+                })
+                .ok();
+                return;
+            };
+            let mut command = util::command::new_std_command(&adb);
+            command.args(["-s", serial.as_str(), "logcat", "-v", "threadtime"]);
+            let Ok(mut child) = Child::spawn(command, Stdio::null(), Stdio::piped(), Stdio::piped())
+            else {
+                this.update(cx, |this, cx| {
+                    this.push_line("Failed to launch adb logcat.".to_string(), cx)
+                })
+                .ok();
+                return;
+            };
+            let Some(stdout) = child.stdout.take() else {
+                return;
+            };
+            let mut lines = futures::io::BufReader::new(stdout).lines();
+            while let Some(Ok(line)) = lines.next().await {
+                if this.update(cx, |this, cx| this.push_line(line, cx)).is_err() {
+                    break;
+                }
+            }
+        });
+        self._task = Some(task);
+    }
+}
+
+impl Focusable for LogcatPanel {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl EventEmitter<workspace::dock::PanelEvent> for LogcatPanel {}
+
+impl Render for LogcatPanel {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .key_context("LogcatPanel")
+            .track_focus(&self.focus_handle)
+            .size_full()
+            .p_2()
+            .gap_0p5()
+            .overflow_y_scroll()
+            .children(
+                self.lines
+                    .iter()
+                    .map(|line| Label::new(line.clone()).size(LabelSize::Small)),
+            )
+    }
+}
+
+impl workspace::Panel for LogcatPanel {
+    fn persistent_name() -> &'static str {
+        "Logcat"
+    }
+
+    fn panel_key() -> &'static str {
+        LOGCAT_PANEL_KEY
+    }
+
+    fn position(&self, _window: &Window, _cx: &App) -> workspace::dock::DockPosition {
+        self.position
+    }
+
+    fn position_is_valid(&self, _position: workspace::dock::DockPosition) -> bool {
+        true
+    }
+
+    fn set_position(
+        &mut self,
+        position: workspace::dock::DockPosition,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.position = position;
+        cx.notify();
+    }
+
+    fn default_size(&self, _window: &Window, _cx: &App) -> Pixels {
+        px(360.)
+    }
+
+    fn icon(&self, _window: &Window, _cx: &App) -> Option<ui::IconName> {
+        Some(ui::IconName::Terminal)
+    }
+
+    fn icon_tooltip(&self, _window: &Window, _cx: &App) -> Option<&'static str> {
+        Some("Logcat")
+    }
+
+    fn toggle_action(&self) -> Box<dyn gpui::Action> {
+        Box::new(ToggleLogcat)
+    }
+
+    fn activation_priority(&self) -> u32 {
+        9
     }
 }
