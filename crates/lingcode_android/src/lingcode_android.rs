@@ -1366,6 +1366,7 @@ impl EventEmitter<workspace::dock::PanelEvent> for LogcatPanel {}
 impl Render for LogcatPanel {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
+            .id("logcat-panel")
             .key_context("LogcatPanel")
             .track_focus(&self.focus_handle)
             .size_full()
