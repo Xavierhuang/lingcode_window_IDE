@@ -55,9 +55,8 @@ pub fn init(_: Arc<AppState>, cx: &mut App) {
                 });
             });
             workspace.register_action(|_workspace, _: &StopRemoteServer, _window, cx| {
-                GlobalRemoteServer::global(cx)
-                    .0
-                    .update(cx, |server, cx| server.stop(cx));
+                let server = GlobalRemoteServer::global(cx).0.clone();
+                server.update(cx, |server, cx| server.stop(cx));
             });
         },
     )
