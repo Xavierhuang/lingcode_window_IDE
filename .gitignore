@@ -60,3 +60,10 @@ crates/docs_preprocessor/actions.json
 /welcome_screenshot.png
 /*_err.txt
 /zed_version.txt
+
+# internal dev notes (kept local, out of the public repo)
+LINGCODE-CHANGES.md
+MAC-PARITY-IMPLEMENTATION-PLAN.md
+MAC-PARITY-STATUS.md
+REMOTE-CODING-PLAN.md
+check_output.log

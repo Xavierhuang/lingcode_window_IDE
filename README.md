@@ -1,42 +1,38 @@
 # LingCode
 
-LingCode is a high-performance, multiplayer code editor — a rebranded fork of
-[Zed](https://github.com/zed-industries/zed) (Rust + GPUI) wired to use LingCode's
-multi-provider AI agent instead of Zed's hosted service.
+LingCode is a high-performance, multiplayer code editor built in Rust with a
+GPU-accelerated renderer and a built-in, multi-provider AI agent.
 
----
+## Download
 
-### Building from source
+Grab the latest Windows installer from the
+[Releases](https://github.com/Xavierhuang/lingcode_window_IDE/releases) page:
+
+- **LingCode-x86_64.exe** — Intel / AMD PCs
+- **LingCode-aarch64.exe** — ARM64 PCs (Snapdragon, Surface Pro X, etc.)
+
+> The build is currently unsigned, so Windows SmartScreen may warn on first launch —
+> click **More info → Run anyway**.
+
+## Features
+
+- Fast, GPU-accelerated editing with full language-server (LSP) support
+- A built-in AI agent with multiple model providers (LingModel, Kimi, Qwen, and more)
+- Integrated cloud deploy, project sharing, and Android build/deploy tooling
+- Real-time multiplayer collaboration
+- Start from a starter project with **New from Template**
+
+## Building from source
 
 - [Building LingCode for Windows](./WINDOWS-BUILD.md)
 
-The upstream Zed build guides still apply for other platforms:
-
-- [Building for macOS](./docs/src/development/macos.md)
-- [Building for Linux](./docs/src/development/linux.md)
-
-### What's different from upstream Zed
-
-LingCode keeps changes minimal and centralized (branding, identifiers, assets, and the
-built-in agent) to ease rebasing against upstream Zed. See
-[LINGCODE-CHANGES.md](./LINGCODE-CHANGES.md) for the complete list.
-
-Highlights:
-
-- Rebranded **Zed → LingCode** across all user-visible chrome (app name, menus, About,
-  welcome screen, settings, provider-configuration text, notifications).
-- Ships **LingCode's ACP agent** as the built-in agent.
-- The Zed-hosted cloud provider (Zed Pro/Business/AI paywall) is **disabled**, and
-  built-in auto-update is **disabled** (LingCode manages its own updates).
-
-### Contributing
+## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-### Licensing
+## License
 
-LingCode is a fork of Zed and inherits its licensing. License information for third-party
-dependencies must be correctly provided for CI to pass. We use
-[`cargo-about`](https://github.com/EmbarkStudios/cargo-about) to comply with open-source
-licenses; if CI fails on licensing, check `script/licenses/zed-licenses.toml` (see the
-upstream guidance in the Zed repository for details).
+LingCode is open source. The applicable terms are in
+[LICENSE-GPL](./LICENSE-GPL), [LICENSE-APACHE](./LICENSE-APACHE), and
+[LICENSE-AGPL](./LICENSE-AGPL). Third-party dependency licenses are tracked with
+[`cargo-about`](https://github.com/EmbarkStudios/cargo-about).
