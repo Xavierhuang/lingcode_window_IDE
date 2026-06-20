@@ -57,6 +57,10 @@ actions!(
         ToggleLogcat,
         /// Forward the running app's JDWP debug port so a debugger can attach.
         AndroidDebugJdwp,
+        /// Build + install the Wear OS module (`gradlew :wear:installDebug`).
+        AndroidRunWear,
+        /// Launch a Wear OS emulator (an AVD with "wear" in its name).
+        AndroidStartWearEmulator,
         /// Build the release bundle and upload it to Google Play (Play Developer API).
         AndroidDeployToPlay,
         /// Open the Google Play Console in your browser.
@@ -112,6 +116,12 @@ pub fn init(app_state: Arc<AppState>, cx: &mut App) {
             });
             workspace.register_action(|workspace, _: &AndroidDebugJdwp, window, cx| {
                 debug_forward(workspace, window, cx);
+            });
+            workspace.register_action(|workspace, _: &AndroidRunWear, window, cx| {
+                run_on_wear(workspace, window, cx);
+            });
+            workspace.register_action(|workspace, _: &AndroidStartWearEmulator, window, cx| {
+                start_wear_emulator(workspace, window, cx);
             });
             workspace.register_action(|_workspace, _: &AndroidOpenPlayConsole, _window, cx| {
                 cx.open_url(PLAY_CONSOLE_URL);
@@ -495,6 +505,76 @@ fn start_emulator(workspace: &mut Workspace, window: &mut Window, cx: &mut Conte
     ]);
     workspace.toggle_modal(window, cx, move |_window, cx| {
         AndroidModal::new("Android Emulators".into(), job, cx)
+    });
+}
+
+/// Build + install the Wear OS module (`gradlew :wear:installDebug`) onto the
+/// connected watch or Wear emulator. Assumes the conventional `wear` module name
+/// (Android Studio's Wear template); if yours differs, gradle reports the error.
+fn run_on_wear(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    let title: SharedString = "Run on Wear OS".into();
+    let Some(cwd) = project_root(workspace, cx) else {
+        let job = AndroidJob::Report(vec!["Open an Android project first.".into()]);
+        workspace.toggle_modal(window, cx, move |_window, cx| {
+            AndroidModal::new(title.clone(), job, cx)
+        });
+        return;
+    };
+    let job = match gradle_command(&cwd, &[":wear:installDebug"]) {
+        Some((program, args)) => AndroidJob::Command { program, args, cwd },
+        None => AndroidJob::Report(vec![
+            "No gradlew wrapper found — run `gradle wrapper` in your project first.".into(),
+        ]),
+    };
+    workspace.toggle_modal(window, cx, move |_window, cx| {
+        AndroidModal::new(title.clone(), job, cx)
+    });
+}
+
+/// Launch the first Wear OS AVD (one whose name contains "wear"), detached.
+fn start_wear_emulator(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    let Some(emulator) = emulator_path(android_sdk().as_deref()) else {
+        let job = AndroidJob::Report(vec![
+            "emulator not found — install the Android SDK emulator package.".into(),
+        ]);
+        workspace.toggle_modal(window, cx, move |_window, cx| {
+            AndroidModal::new("Wear OS Emulator".into(), job, cx)
+        });
+        return;
+    };
+
+    cx.background_spawn(async move {
+        let listed = util::command::new_std_command(&emulator)
+            .arg("-list-avds")
+            .output();
+        let Some(name) = listed.ok().and_then(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty() && line.to_lowercase().contains("wear"))
+                .map(str::to_string)
+        }) else {
+            log::error!("LingCode Android: no Wear OS AVD found to launch");
+            return;
+        };
+        if let Err(err) = util::command::new_std_command(&emulator)
+            .arg(format!("@{name}"))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            log::error!("LingCode Android: failed to launch Wear emulator @{name}: {err}");
+        }
+    })
+    .detach();
+
+    let job = AndroidJob::Report(vec![
+        "Launching the first Wear OS emulator (an AVD with \"wear\" in its name)…".into(),
+        "If nothing starts, create a Wear OS AVD via the Android SDK / Android Studio.".into(),
+    ]);
+    workspace.toggle_modal(window, cx, move |_window, cx| {
+        AndroidModal::new("Wear OS Emulator".into(), job, cx)
     });
 }
 
