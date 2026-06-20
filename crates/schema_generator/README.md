@@ -1,6 +1,6 @@
-# Zed Schema Generator
+# LingCode Schema Generator
 
-Prints various Zed schemas to stdout.
+Prints various LingCode schemas to stdout.
 
 ## Usage
 
