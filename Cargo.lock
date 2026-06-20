@@ -10022,14 +10022,26 @@ name = "lingcode_cloud"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "editor",
  "futures 0.3.32",
  "gpui",
  "log",
+ "menu",
  "serde",
  "serde_json",
  "ui",
  "util",
  "which 6.0.3",
+ "workspace",
+]
+
+[[package]]
+name = "lingcode_templates"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "fs",
+ "gpui",
  "workspace",
 ]
 
@@ -22471,6 +22483,7 @@ dependencies = [
  "line_ending_selector",
  "lingcode_android",
  "lingcode_cloud",
+ "lingcode_templates",
  "log",
  "markdown",
  "markdown_preview",

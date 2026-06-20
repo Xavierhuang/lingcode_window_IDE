@@ -721,6 +721,9 @@ fn main() {
         journal::init(app_state.clone(), cx);
         lingcode_cloud::init(app_state.clone(), cx);
         lingcode_android::init(app_state.clone(), cx);
+        lingcode_install::init(app_state.clone(), cx);
+        lingcode_remote::init(app_state.clone(), cx);
+        lingcode_templates::init(app_state.clone(), cx);
         encoding_selector::init(cx);
         language_selector::init(cx);
         line_ending_selector::init(cx);
@@ -1200,6 +1203,11 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
                     anyhow::Ok(())
                 })
                 .detach_and_log_err(cx);
+            }
+            OpenRequestKind::LingModelAuthCallback { callback } => {
+                // Route the browser sign-in redirect to the LingModel provider
+                // (it subscribes via the global LingModelAuthListener).
+                language_models::deliver_ling_model_auth(callback, cx);
             }
         }
 

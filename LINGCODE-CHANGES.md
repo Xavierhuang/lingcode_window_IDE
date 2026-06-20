@@ -117,6 +117,30 @@ connected device via `installDebug`), AVD **create/delete** UI (needs text input
 form** with Keychain-stored credentials (currently the `.lingcode/play-deploy.json` config +
 project `signingConfigs`).
 
+## Project templates (new `lingcode_templates` crate)
+
+Adds a **New from Template** flow so users can start from a starter project instead of an empty
+folder (upstream Zed only opens existing folders). New crate `crates/lingcode_templates/` (mirrors
+the `lingcode_android` init+`register_action` pattern), wired via `lingcode_templates::init` in
+`crates/zed/src/main.rs`.
+
+- **Action:** `workspace::NewFromTemplate` (defined in the `workspace` crate next to `NewFile`, so the
+  welcome screen can reference it without a dependency cycle; the handler is registered from the new
+  crate via `workspace.register_action`).
+- **Entry points:** the **Welcome** screen "Get Started" section (`crates/workspace/src/welcome.rs`,
+  `Section<4>`→`Section<5>`, `IconName::FileCode`) and the **File** app menu ("New from Template…",
+  `crates/zed/src/zed/app_menus.rs`).
+- **Flow:** native multi-button prompt to pick a template → system folder picker for the parent dir →
+  scaffold into a fresh non-colliding `<slug>` directory (via the `fs` abstraction) → open it with
+  `open_workspace_for_paths`.
+- **Templates (embedded via `include_str!`, fully offline)** under `crates/lingcode_templates/templates/`:
+  **Python** (`main.py` + `pytest`), **Web / HTML5 game** (zero-dep canvas loop), **Android**
+  (Kotlin + Gradle, builds via the Android menu), **Node / TypeScript** (`tsc` + npm scripts). Add a
+  template by dropping files under `templates/<dir>/`, listing them with the `template_file!` macro, and
+  adding a `Template` entry.
+- **Known caveat:** the Android template omits the Gradle **wrapper jar** (a binary can't be embedded as
+  text), so its README instructs running `gradle wrapper` once before the Android-menu build commands.
+
 ## Intentionally NOT changed (and why)
 - **`zed:` action namespace (display)** — now de-branded everywhere it's shown: `debrand_action_name`
   is applied inside `command_palette::humanize_action_name`, which is the single function the command
@@ -177,3 +201,115 @@ experience already reaches functional parity through Zed's native ACP agents (`c
   actions (Deploy / Connect / Disconnect / Open Backend Console / Share).
 - **Branded provider icons** — `IconName::{AiKimi, AiQwen, AiZai}` + `assets/icons/ai_{kimi,qwen,zai}.svg`;
   `open_ai_compatible.rs` `icon()` maps the preset ids to them (others keep the generic glyph).
+
+## Magic Install (new `lingcode_install` crate)
+
+Ports the macOS app's **Magic Install** (`Services/Deploy/MagicInstallService.swift`): detect the project's
+package manager(s) from marker files and run their install commands, streaming output into a modal. New crate
+`crates/lingcode_install/` mirrors the `lingcode_cloud` action+streaming-modal pattern, wired via
+`lingcode_install::init` in `crates/zed/src/main.rs` and an **Install Dependencies** item in the **Cloud** app
+menu (`crates/zed/src/zed/app_menus.rs`).
+
+- **Action:** `lingcode_install::MagicInstall` (registered on the workspace via `register_action`).
+- **Native, no CLI dependency** — unlike Cloud/Push (which delegate to the `lingcode` CLI), detection is just
+  marker-file existence checks and the install command is a plain subprocess, so it works even when the CLI
+  isn't on PATH. Spawns via Zed's cross-platform `util::command::new_std_command` (no `/bin/zsh` assumption);
+  `which::which` resolves Windows `.cmd`/`.bat` wrappers.
+- **Detection table** (`MANAGERS`): pnpm / yarn / bun / npm (lockfile suppression so generics don't double up),
+  cargo, poetry / pipenv / pip, go, bundler, composer, dotnet, maven, swift. Extend by adding a
+  `PackageManager` entry.
+- **Tests:** unit tests over the detect filter (suppression, multi-ecosystem, empty project) using a temp dir —
+  pure logic, no spawn (`tempfile` dev-dependency).
+- **Status:** code complete + `cargo metadata` validates the manifests; pending the ARM64 `build_lingcode.bat`
+  compile + a manual run before it's trusted.
+
+## Magic Push AI commit message
+
+Brings `lingcode_cloud::PushToGithub` in line with the macOS Magic Push (`Services/Deploy/MagicPushService.swift`),
+which generates a one-line commit message from the staged diff. **Editor-side change only** (in
+`crates/lingcode_cloud/src/lingcode_cloud.rs`):
+- `run_push` now passes `--ai-message` so the CLI generates the message when the user supplies none.
+- The `PushEvent::Commit.message` field (previously `#[allow(dead_code)]`) is surfaced in the modal:
+  `Committed N file(s): <message>`.
+
+**Companion CLI change required (separate `lingcode` repo, `src/github/push.ts`):** honor `--ai-message` by
+generating the commit message from `git diff --cached` and emitting it in the existing `commit` NDJSON event.
+The two must ship together — on a CLI that predates the flag the push will error on the unknown argument.
+
+## LingModel browser OAuth sign-in
+
+Ports the macOS app's "Sign In with Browser" flow (`LingCodeAuthService.swift`) so LingModel can be
+authenticated via a `lingcode://` OAuth round-trip instead of only a pasted API key. **Purely additive** — the
+pasted-key path is untouched and remains the fallback; both land the token in the same keychain slot
+(`ApiKeyState`), so all inference code is unchanged.
+
+- **Callback parsing** (`crates/zed/src/zed/open_listener.rs`) — new `OpenRequestKind::LingModelAuthCallback`
+  + a parse arm for `lingcode://auth/callback?code=…&state=…` (or `access_token=…` / `error=…`), with a unit
+  test. Dispatched in `crates/zed/src/main.rs`'s `handle_open_request` to `deliver_ling_model_auth`.
+- **Cross-crate bridge** (`crates/language_models/src/ling_model_auth.rs`, new) — a `LingModelAuthListener`
+  global (modeled on `client::RefreshLlmTokenListener`) that the provider subscribes to; the last callback is
+  buffered for late/cold-launch subscribers. Registered first in `language_models::init`.
+- **Provider** (`crates/language_models/src/provider/ling_model.rs`) — `State` gains a PKCE
+  `begin_browser_sign_in` (S256 via `sha2`, verifier/state via `rand`, base64url), an `on_auth_callback`
+  (state validation → direct `access_token` store, or `exchange_code` against the token endpoint via
+  `http_client`), and a **"Sign In with Browser"** button in the config view. New deps: `sha2`, `rand`, `url`.
+- **Endpoints to confirm before shipping:** `OAUTH_AUTHORIZE_URL`, `OAUTH_TOKEN_URL`, `OAUTH_CLIENT_ID`, and
+  whether the server returns `access_token` directly on the redirect or a `code` to exchange (both handled).
+- **Branding rule honored:** no user-visible string names the upstream vendor.
+- **Status:** code complete + `cargo metadata`/`cargo fmt` clean. **Higher verification risk than the Magic
+  items** (crypto + cross-crate gpui globals + async, none compiled here) — must build with
+  `build_lingcode.bat` and be exercised end-to-end (warm launch *and* cold launch) before it's trusted. The
+  changelog originally flagged this port as "large and risky"; the API-key fallback contains that risk.
+
+## Remote coding — client slice (host side staged)
+
+The macOS "remote coding" feature (drive the agent from a phone, zero setup) has no Windows equivalent: the
+serving component is macOS-native (`LingCodeServer` / `lingcode serve`, Darwin `NWListener`), so — unlike the
+cloud actions — the fork can't just spawn the CLI to host. Full host support is **new networked Rust**
+(estimated weeks); the file-level staged plan is in **`REMOTE-CODING-PLAN.md`**.
+
+Shipped now (the tractable, working *client* half):
+- **`lingcode_cloud::OpenRemoteControl`** — opens `https://lingcode.dev/remote-control.html`
+  (`crates/lingcode_cloud/src/lingcode_cloud.rs`), so a Windows user can drive their *other* LingCode hosts
+  from the web client (the relay + web UI are already deployed and platform-independent). One-liner action in
+  the existing crate, mirroring `OpenBackendConsole`. Menu: **Cloud → Remote Control (Web)**
+  (`crates/zed/src/zed/app_menus.rs`).
+- Not yet done: making *this* Windows machine a drivable **host** (the agent HTTP+SSE server + relay bridge) —
+  see the plan. Deliberately staged rather than written blind.
+
+### Host server lifecycle (new `lingcode_remote` crate)
+
+Key realization: the Windows **`lingcode` CLI already ships a complete cross-platform headless server**
+(`lingcode serve` — sessions, SSE event streams, permissions, PTY, files). So the Windows host does **not**
+need a from-scratch Rust HTTP/SSE server (the macOS Swift `LingCodeServer`/`NWListener` is Apple-only and
+unusable here); it just manages the CLI server's lifecycle — the same "delegate to the CLI" approach as
+`lingcode_cloud`.
+
+New crate `crates/lingcode_remote/`, wired via `lingcode_remote::init` in `crates/zed/src/main.rs` and the
+**Cloud** app menu (`Start Remote Server` / `Stop Remote Server`).
+- **Actions** `lingcode_remote::{StartRemoteServer, StopRemoteServer}`.
+- **Start** spawns `lingcode serve` (via `util::command::new_std_command` + `util::process::Child`), parses the
+  `listening on http://host:port` line for the address, and opens a status modal. The running process is held
+  in a **gpui global** so it survives the modal being closed (`StopRemoteServer` / the modal's Stop button
+  `Child::kill()`s it). On exit it surfaces a hint to run `lingcode serve` in a terminal (e.g. not signed in).
+- **Zero-setup phone reach is now wired:** the crate spawns **`lingcode remote`** (not bare `lingcode serve`),
+  the new CLI command that registers this machine as a relay host, starts a private loopback server, and
+  tunnels the hosted relay to it — so the web remote-control reaches it with no SSH/port config. (The relay
+  bridge was built once in the cross-platform CLI so Mac and Windows share it — see below.)
+- **Status:** code complete + `cargo metadata`/`cargo fmt` clean; pending the ARM64 `build_lingcode.bat`
+  compile + a run.
+
+### Relay bridge — `lingcode remote` (in the cross-platform CLI)
+
+Closes the zero-setup gap. **Faithful port of the macOS app's `collab-bridge/bridge.mjs` serve-host logic**
+into the Bun/TS `lingcode` CLI (a separate repo), so both platforms share one bridge:
+- `packages/lingcode/src/remote/serve-tunnel.ts` — joins the relay room's `__serve` doc over y-websocket,
+  announces `lc-serve-host-hello`, and answers `lc-serve-request` frames by proxying to the loopback server,
+  streaming back `lc-serve-response-head`/`-chunk`/`-close`/`-error` (verbatim protocol from the Mac bridge,
+  incl. the binary-JSON-frame trick that avoids the Yjs decoder).
+- `packages/lingcode/src/cli/cmd/remote.ts` — `lingcode remote`: registers via `POST /api/remote/hosts`
+  (LingCode Cloud token), starts a private loopback `lingcode serve --hostname 127.0.0.1` (per-run password;
+  the tunnel authenticates with the matching `ServerAuth` Basic header), then runs the tunnel until Ctrl-C.
+- New deps `yjs` / `y-websocket` / `ws` (Mac bridge versions); wired into `src/index.ts`.
+- **Status:** typechecks clean except the three new imports (need `bun install`); the logic is a faithful port
+  but **needs `bun install` + a live relay + sign-in to verify end-to-end** (none runnable in this session).

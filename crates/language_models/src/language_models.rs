@@ -11,10 +11,12 @@ use language_model::{
 use provider::deepseek::DeepSeekLanguageModelProvider;
 
 pub mod extension;
+pub mod ling_model_auth;
 pub mod provider;
 mod settings;
 
 pub use crate::extension::init_proxy as init_extension_proxy;
+pub use crate::ling_model_auth::{LingModelAuthCallback, deliver_ling_model_auth};
 
 use crate::provider::anthropic::AnthropicLanguageModelProvider;
 use crate::provider::bedrock::BedrockLanguageModelProvider;
@@ -35,6 +37,11 @@ use crate::provider::x_ai::XAiLanguageModelProvider;
 pub use crate::settings::*;
 
 pub fn init(user_store: Entity<UserStore>, client: Arc<Client>, cx: &mut App) {
+    // Install the LingModel browser-OAuth callback listener before registering
+    // providers, so the LingModel provider's subscription is live by the time
+    // any `lingcode://auth/callback` can be delivered.
+    ling_model_auth::LingModelAuthListener::register(cx);
+
     let credentials_provider = client.credentials_provider();
     let registry = LanguageModelRegistry::global(cx);
     registry.update(cx, |registry, cx| {

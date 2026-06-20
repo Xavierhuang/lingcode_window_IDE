@@ -15,10 +15,11 @@ use std::{
 };
 
 use anyhow::{Context as _, Result};
+use editor::Editor;
 use futures::{AsyncBufReadExt as _, AsyncReadExt as _, StreamExt as _};
 use gpui::{
-    App, AppContext as _, Context, DismissEvent, EventEmitter, FocusHandle, Focusable, Render,
-    SharedString, Task, Window, actions,
+    App, AppContext as _, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,
+    Render, SharedString, Task, Window, actions,
 };
 use serde::Deserialize;
 use ui::prelude::*;
@@ -38,6 +39,10 @@ actions!(
         OpenBackendConsole,
         /// Manage collaborators (owner/editor/viewer) for the current project.
         ShareCloudProject,
+        /// Commit and push the current project to GitHub.
+        PushToGithub,
+        /// Open the LingCode web remote-control to drive a remote LingCode host.
+        OpenRemoteControl,
     ]
 );
 
@@ -62,6 +67,16 @@ pub fn init(_: Arc<AppState>, cx: &mut App) {
             workspace.register_action(|_workspace, _: &ShareCloudProject, _window, cx| {
                 cx.open_url(PROJECT_SHARE_URL);
             });
+            // The web remote-control is a hosted page (auth = browser session); it
+            // lists the user's remote LingCode hosts and drives their agents. This
+            // is the *client* side and works anywhere. Making this machine itself a
+            // drivable host is separate, larger work (see REMOTE-CODING-PLAN.md).
+            workspace.register_action(|_workspace, _: &OpenRemoteControl, _window, cx| {
+                cx.open_url(REMOTE_CONTROL_URL);
+            });
+            workspace.register_action(|workspace, _: &PushToGithub, window, cx| {
+                open_github_push(workspace, window, cx);
+            });
         },
     )
     .detach();
@@ -71,6 +86,8 @@ pub fn init(_: Arc<AppState>, cx: &mut App) {
 const BACKEND_CONSOLE_URL: &str = "https://lingcode.dev/backends.html";
 /// LingCode Cloud project + collaborators panel (web app).
 const PROJECT_SHARE_URL: &str = "https://lingcode.dev/project.html";
+/// LingCode web remote-control client (drives a remote LingCode host's agent).
+const REMOTE_CONTROL_URL: &str = "https://lingcode.dev/remote-control.html";
 
 #[derive(Clone, Copy, PartialEq)]
 enum CloudTask {
@@ -103,7 +120,12 @@ impl CloudTask {
     }
 }
 
-fn open_task(workspace: &mut Workspace, task: CloudTask, window: &mut Window, cx: &mut Context<Workspace>) {
+fn open_task(
+    workspace: &mut Workspace,
+    task: CloudTask,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) {
     let cwd = workspace
         .project()
         .read(cx)
@@ -114,7 +136,9 @@ fn open_task(workspace: &mut Workspace, task: CloudTask, window: &mut Window, cx
         log::error!("LingCode Cloud: no open project to run `{}`", task.title());
         return;
     };
-    workspace.toggle_modal(window, cx, move |_window, cx| CloudModal::new(task, cwd, cx));
+    workspace.toggle_modal(window, cx, move |_window, cx| {
+        CloudModal::new(task, cwd, cx)
+    });
 }
 
 /// NDJSON progress events emitted by `lingcode cloud deploy --ndjson`. Mirrors
@@ -271,7 +295,9 @@ async fn run_cloud_task(
     let status = child.status().await.context("failed to await CLI exit")?;
     if !status.success() {
         let mut err = String::new();
-        let _ = futures::io::BufReader::new(stderr).read_to_string(&mut err).await;
+        let _ = futures::io::BufReader::new(stderr)
+            .read_to_string(&mut err)
+            .await;
         let message = err.trim();
         let message = if message.is_empty() {
             format!("`lingcode` exited with status {status}")
@@ -288,7 +314,11 @@ async fn run_cloud_task(
 }
 
 impl ModalView for CloudModal {
-    fn on_before_dismiss(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> DismissDecision {
+    fn on_before_dismiss(
+        &mut self,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> DismissDecision {
         DismissDecision::Dismiss(true)
     }
 }
@@ -303,11 +333,11 @@ impl EventEmitter<DismissEvent> for CloudModal {}
 
 impl Render for CloudModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let log = v_flex().gap_0p5().children(
-            self.lines
-                .iter()
-                .map(|line| Label::new(line.clone()).size(LabelSize::Small).color(Color::Muted)),
-        );
+        let log = v_flex().gap_0p5().children(self.lines.iter().map(|line| {
+            Label::new(line.clone())
+                .size(LabelSize::Small)
+                .color(Color::Muted)
+        }));
 
         let footer = match &self.status {
             Status::Running => h_flex()
@@ -324,11 +354,13 @@ impl Render for CloudModal {
             Status::Done => {
                 let mut row = h_flex().gap_2();
                 if let Some(url) = self.url.clone() {
-                    row = row.child(Label::new(url.clone()).color(Color::Accent)).child(
-                        Button::new("open", "Open").on_click(cx.listener(move |_, _, _, cx| {
-                            cx.open_url(&url);
-                        })),
-                    );
+                    row = row
+                        .child(Label::new(url.clone()).color(Color::Accent))
+                        .child(Button::new("open", "Open").on_click(cx.listener(
+                            move |_, _, _, cx| {
+                                cx.open_url(&url);
+                            },
+                        )));
                 }
                 row.child(
                     Button::new("close", "Close")
@@ -346,6 +378,358 @@ impl Render for CloudModal {
             .p_4()
             .gap_3()
             .child(Label::new(self.title.clone()).size(LabelSize::Large))
+            .child(log)
+            .child(footer)
+    }
+}
+
+// ── Push to GitHub ───────────────────────────────────────────────────────────
+//
+// Same shape as the Deploy modal (spawn the CLI, stream NDJSON), with one extra
+// twist: when the project has no GitHub remote the CLI emits `need_repo` and the
+// modal switches to a single-line input asking for `owner/repo`, then re-runs
+// the CLI with `--repo` to create it.
+
+fn open_github_push(workspace: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    let cwd = workspace
+        .project()
+        .read(cx)
+        .visible_worktrees(cx)
+        .next()
+        .map(|wt| wt.read(cx).abs_path().to_path_buf());
+    let Some(cwd) = cwd else {
+        log::error!("Push to GitHub: no open project");
+        return;
+    };
+    workspace.toggle_modal(window, cx, move |window, cx| {
+        GithubPushModal::new(cwd, None, window, cx)
+    });
+}
+
+/// NDJSON progress events emitted by `lingcode github push --ndjson`. Mirrors
+/// the `PushEvent` union in the CLI's `src/github/push.ts`.
+#[derive(Deserialize)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+enum PushEvent {
+    Detect {
+        #[serde(rename = "hasRemote")]
+        has_remote: bool,
+        owner: Option<String>,
+        repo: Option<String>,
+        branch: String,
+    },
+    NeedRepo,
+    CreateRepo {
+        owner: String,
+        repo: String,
+        #[allow(dead_code)]
+        url: String,
+    },
+    Commit {
+        message: String,
+        changed: u64,
+    },
+    Push {
+        status: String,
+        branch: String,
+    },
+    Done {
+        url: String,
+        #[allow(dead_code)]
+        branch: String,
+    },
+    Error {
+        message: String,
+    },
+}
+
+enum PushStatus {
+    Running,
+    /// No remote: waiting for the user to enter an `owner/repo` to create.
+    AwaitRepo,
+    Done,
+    Error(SharedString),
+}
+
+pub struct GithubPushModal {
+    cwd: PathBuf,
+    lines: Vec<SharedString>,
+    status: PushStatus,
+    url: Option<SharedString>,
+    repo_editor: Entity<Editor>,
+    _task: Option<Task<()>>,
+}
+
+impl GithubPushModal {
+    fn new(
+        cwd: PathBuf,
+        repo: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let repo_editor = cx.new(|cx| {
+            let mut editor = Editor::single_line(window, cx);
+            editor.set_placeholder_text("owner/repo", window, cx);
+            editor
+        });
+        let mut this = Self {
+            cwd,
+            lines: Vec::new(),
+            status: PushStatus::Running,
+            url: None,
+            repo_editor,
+            _task: None,
+        };
+        this.start_push(repo, cx);
+        this
+    }
+
+    fn start_push(&mut self, repo: Option<String>, cx: &mut Context<Self>) {
+        self.status = PushStatus::Running;
+        let cwd = self.cwd.clone();
+        let task = cx.spawn(async move |this, cx| {
+            let result = run_push(cwd, repo, this.clone(), cx).await;
+            this.update(cx, |modal, cx| {
+                match result {
+                    // The `done`/`need_repo`/`error` events already set the
+                    // terminal state; only fall through to Done if the process
+                    // ended while still nominally Running.
+                    Ok(()) => {
+                        if matches!(modal.status, PushStatus::Running) {
+                            modal.status = PushStatus::Done;
+                        }
+                    }
+                    Err(err) => modal.status = PushStatus::Error(err.to_string().into()),
+                }
+                cx.notify();
+            })
+            .ok();
+        });
+        self._task = Some(task);
+    }
+
+    fn push_line(&mut self, line: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.lines.push(line.into());
+        if self.lines.len() > 200 {
+            self.lines.remove(0);
+        }
+        cx.notify();
+    }
+
+    fn confirm_repo(&mut self, _: &menu::Confirm, window: &mut Window, cx: &mut Context<Self>) {
+        if !matches!(self.status, PushStatus::AwaitRepo) {
+            return;
+        }
+        let repo = self.repo_editor.read(cx).text(cx).trim().to_string();
+        if repo.is_empty() {
+            return;
+        }
+        self.repo_editor
+            .update(cx, |editor, cx| editor.clear(window, cx));
+        self.push_line(format!("Creating {repo}…"), cx);
+        self.start_push(Some(repo), cx);
+    }
+
+    fn cancel(&mut self, _: &menu::Cancel, _window: &mut Window, cx: &mut Context<Self>) {
+        cx.emit(DismissEvent);
+    }
+}
+
+/// Spawn `lingcode github push . --ndjson [--repo <repo>]` and stream its
+/// progress into the modal. Returns Err only on spawn/transport failure.
+async fn run_push(
+    cwd: PathBuf,
+    repo: Option<String>,
+    this: gpui::WeakEntity<GithubPushModal>,
+    cx: &mut gpui::AsyncApp,
+) -> Result<()> {
+    let program = which::which("lingcode").unwrap_or_else(|_| PathBuf::from("lingcode"));
+    let mut command = util::command::new_std_command(&program);
+    // `--ai-message` asks the CLI to generate a one-line commit message from the
+    // staged diff when the user hasn't supplied one (the macOS Magic Push
+    // behavior). Requires the companion `lingcode` CLI change in `src/github/
+    // push.ts`; on a CLI that predates the flag the push will error, so the two
+    // must ship together.
+    command.args(["github", "push", ".", "--ndjson", "--ai-message"]);
+    if let Some(repo) = &repo {
+        command.args(["--repo", repo]);
+    }
+    command.current_dir(&cwd);
+
+    let mut child = Child::spawn(command, Stdio::null(), Stdio::piped(), Stdio::piped())
+        .with_context(|| format!("failed to launch `{}`", program.display()))?;
+    let stdout = child.stdout.take().context("failed to capture stdout")?;
+    let stderr = child.stderr.take().context("failed to capture stderr")?;
+
+    let mut lines = futures::io::BufReader::new(stdout).lines();
+    while let Some(line) = lines.next().await {
+        let line = match line {
+            Ok(line) => line,
+            Err(err) => {
+                log::warn!("Push to GitHub: stdout read error: {err}");
+                break;
+            }
+        };
+        if line.is_empty() {
+            continue;
+        }
+        this.update(cx, |modal, cx| {
+            match serde_json::from_str::<PushEvent>(&line) {
+                Ok(PushEvent::Detect {
+                    has_remote,
+                    owner,
+                    repo,
+                    branch,
+                }) => {
+                    if has_remote {
+                        let slug = match (owner, repo) {
+                            (Some(o), Some(r)) => format!("{o}/{r}"),
+                            _ => "remote".into(),
+                        };
+                        modal.push_line(format!("Detected {slug} ({branch})"), cx);
+                    } else {
+                        modal.push_line(format!("No remote yet (branch {branch})"), cx);
+                    }
+                }
+                Ok(PushEvent::NeedRepo) => {
+                    modal.status = PushStatus::AwaitRepo;
+                    modal.push_line("No GitHub remote — enter a repository to create.", cx);
+                }
+                Ok(PushEvent::CreateRepo { owner, repo, .. }) => {
+                    modal.push_line(format!("Created {owner}/{repo}"), cx);
+                }
+                Ok(PushEvent::Commit { message, changed }) => {
+                    if changed > 0 {
+                        modal.push_line(format!("Committed {changed} file(s): {message}"), cx);
+                    } else {
+                        modal.push_line("Nothing to commit", cx);
+                    }
+                }
+                Ok(PushEvent::Push { status, branch }) => {
+                    if status == "start" {
+                        modal.push_line(format!("Pushing to {branch}…"), cx);
+                    } else {
+                        modal.push_line(format!("Pushed {branch}"), cx);
+                    }
+                }
+                Ok(PushEvent::Done { url, .. }) => {
+                    modal.url = Some(url.clone().into());
+                    modal.status = PushStatus::Done;
+                    modal.push_line(format!("Pushed to {url}"), cx);
+                }
+                Ok(PushEvent::Error { message }) => {
+                    modal.status = PushStatus::Error(message.clone().into());
+                    modal.push_line(format!("Error: {message}"), cx);
+                }
+                Err(_) => modal.push_line(line.clone(), cx),
+            }
+        })
+        .ok();
+    }
+
+    let status = child.status().await.context("failed to await CLI exit")?;
+    if !status.success() {
+        let mut err = String::new();
+        let _ = futures::io::BufReader::new(stderr)
+            .read_to_string(&mut err)
+            .await;
+        let message = err.trim();
+        let message = if message.is_empty() {
+            format!("`lingcode` exited with status {status}")
+        } else {
+            message.to_string()
+        };
+        this.update(cx, |modal, cx| {
+            // Don't clobber an AwaitRepo prompt with a transport error.
+            if !matches!(modal.status, PushStatus::AwaitRepo) {
+                modal.status = PushStatus::Error(message.clone().into());
+            }
+            cx.notify();
+        })
+        .ok();
+    }
+    Ok(())
+}
+
+impl ModalView for GithubPushModal {
+    fn on_before_dismiss(
+        &mut self,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> DismissDecision {
+        DismissDecision::Dismiss(true)
+    }
+}
+
+impl Focusable for GithubPushModal {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.repo_editor.focus_handle(cx)
+    }
+}
+
+impl EventEmitter<DismissEvent> for GithubPushModal {}
+
+impl Render for GithubPushModal {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let log = v_flex().gap_0p5().children(self.lines.iter().map(|line| {
+            Label::new(line.clone())
+                .size(LabelSize::Small)
+                .color(Color::Muted)
+        }));
+
+        let footer =
+            match &self.status {
+                PushStatus::Running => h_flex()
+                    .child(Label::new("Working…").color(Color::Muted))
+                    .into_any_element(),
+                PushStatus::AwaitRepo => v_flex()
+                    .gap_2()
+                    .child(
+                        Label::new("Repository to create (owner/repo)")
+                            .size(LabelSize::Small)
+                            .color(Color::Muted),
+                    )
+                    .child(self.repo_editor.clone())
+                    .child(Button::new("create", "Create & Push").on_click(cx.listener(
+                        |this, _, window, cx| this.confirm_repo(&menu::Confirm, window, cx),
+                    )))
+                    .into_any_element(),
+                PushStatus::Error(message) => h_flex()
+                    .gap_2()
+                    .child(Label::new(message.clone()).color(Color::Error))
+                    .child(
+                        Button::new("close", "Close")
+                            .on_click(cx.listener(|_, _, _, cx| cx.emit(DismissEvent))),
+                    )
+                    .into_any_element(),
+                PushStatus::Done => {
+                    let mut row = h_flex().gap_2();
+                    if let Some(url) = self.url.clone() {
+                        row = row
+                            .child(Label::new(url.clone()).color(Color::Accent))
+                            .child(Button::new("open", "Open").on_click(cx.listener(
+                                move |_, _, _, cx| {
+                                    cx.open_url(&url);
+                                },
+                            )));
+                    }
+                    row.child(
+                        Button::new("close", "Close")
+                            .on_click(cx.listener(|_, _, _, cx| cx.emit(DismissEvent))),
+                    )
+                    .into_any_element()
+                }
+            };
+
+        v_flex()
+            .key_context("LingCodeGithubPush")
+            .on_action(cx.listener(Self::confirm_repo))
+            .on_action(cx.listener(Self::cancel))
+            .elevation_3(cx)
+            .w(px(540.))
+            .p_4()
+            .gap_3()
+            .child(Label::new("Push to GitHub").size(LabelSize::Large))
             .child(log)
             .child(footer)
     }

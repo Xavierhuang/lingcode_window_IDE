@@ -1,0 +1,26 @@
+[package]
+name = "lingcode_install"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lingcode_install.rs"
+doctest = false
+
+[dependencies]
+anyhow.workspace = true
+futures.workspace = true
+gpui.workspace = true
+log.workspace = true
+ui.workspace = true
+util.workspace = true
+which.workspace = true
+workspace.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
