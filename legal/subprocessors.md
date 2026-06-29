@@ -3,100 +3,88 @@ title: Subprocessor List
 slug: subprocessors
 ---
 
-Zed uses select third-party subprocessors to deliver core product functionality. Each subprocessor processes customer personal data only as necessary to provide its service, and all are subject to appropriate data protection agreements.
+LingCode (operated by Aurelian Labs Inc.) uses select third-party subprocessors to deliver core product functionality. Each subprocessor processes customer personal data only as necessary to provide its service, and all are subject to appropriate data protection agreements where applicable.
 
-### How Zed Uses Subprocessors
+### How LingCode Uses Subprocessors
 
-To provide fast, reliable, and secure functionality, Zed relies on a small number of carefully vetted third-party subprocessors. These vendors help us deliver essential capabilities such as hosting, billing, analytics, real-time collaboration, and hosted AI features.
+To provide fast, reliable, and secure functionality, LingCode relies on a small number of carefully vetted third-party subprocessors. These vendors help us deliver essential capabilities such as hosting, billing, authentication, analytics, email, and hosted AI features.
 
 Each subprocessor only processes customer personal data as needed to provide its service.
 
-Zed maintains contracts and data protection agreements with all subprocessors, including GDPR-compliant terms where applicable. We do not sell customer data, and we do not share customer personal data with vendors for advertising or marketing purposes.
+LingCode maintains contracts and data protection agreements with subprocessors where applicable. We do not sell customer data, and we do not share customer personal data with vendors for advertising or marketing purposes.
 
 ### AI Subprocessors
 
-Zed offers three modes for AI:
+LingCode offers two modes for AI:
 
-1. **Bring your own API key** — data goes directly from the customer to the model provider; Zed does not process or store it.
-2. [**External Agents**](https://zed.dev/docs/ai/external-agents) — Zed uses ACP to provide an enhanced experience with terminal-based AI code agents like Claude Code or OpenAI Codex. Data is not processed or stored by Zed when using external agents.
-3. **Zed-hosted models** — Zed sends customer prompts to one of its AI providers (listed below). These vendors act as subprocessors only for customers who choose this mode.
+1. **Bring your own API key** — data goes directly from the customer to the model provider; LingCode does not process or store it.
+2. **LingCode-hosted models** — LingCode sends customer prompts to its hosted inference provider to generate responses. These vendors act as subprocessors only for customers who choose this mode.
 
 ### Ongoing Updates
 
-**Last Updated**: March 2, 2026
+**Last Updated**: June 29, 2026
 
-This subprocessor list is reviewed regularly. Zed will notify customers of material changes in accordance with our [Terms](https://zed.dev/terms) and [Privacy Policy](https://zed.dev/privacy-policy).
+This subprocessor list is reviewed regularly. LingCode will notify customers of material changes in accordance with our [Terms](https://lingcode.dev/terms) and [Privacy Policy](https://lingcode.dev/privacy-policy).
 
 ---
 
 ## Infrastructure & Hosting
 
-| Subprocessor            | Purpose                                  | Data Location |
-| ----------------------- | ---------------------------------------- | ------------- |
-| **Cloudflare**          | Network services, Cloudflare Workers     | Global        |
-| **Amazon Web Services** | Telemetry ingestion pipeline, S3 buckets | United States |
-| **DigitalOcean**        | Application database hosting             | United States |
-| **Vercel**              | Website and edge infrastructure hosting  | United States |
+| Subprocessor       | Purpose                                                                      | Data Location      |
+| ------------------ | --------------------------------------------------------------------------- | ------------------ |
+| **DigitalOcean**   | Application hosting, managed database, and S3-compatible object storage (Spaces) | United States      |
+| **Cloudflare**     | DNS, CDN, and edge compute (Workers)                                         | Global             |
+| **Vercel**         | Hosting for customer-published applications                                  | United States / Global |
+| **Netlify**        | Hosting for customer-published applications                                  | United States / Global |
 
 ---
 
 ## Billing & Payments
 
-| Subprocessor | Purpose                                                      | Data Location |
-| ------------ | ------------------------------------------------------------ | ------------- |
-| **Stripe**   | Payment processing                                           | United States |
-| **Orb**      | Usage tracking, subscription management, and metered billing | United States |
+| Subprocessor | Purpose                                          | Data Location |
+| ------------ | ------------------------------------------------ | ------------- |
+| **Stripe**   | Payment processing and subscription management   | United States |
 
 ---
 
-## Operational Tools
+## Authentication
 
-| Subprocessor | Purpose                               | Data Location |
-| ------------ | ------------------------------------- | ------------- |
-| **Day.ai**   | Customer relationship management      | United States |
-| **Linear**   | Issue tracking and project management | United States |
+| Subprocessor | Purpose                                  | Data Location |
+| ------------ | ---------------------------------------- | ------------- |
+| **Google**   | OAuth sign-in                            | United States |
+| **GitHub**   | OAuth sign-in and code/prototype export  | United States |
+| **Apple**    | OAuth sign-in                            | United States |
+
+---
+
+## Analytics
+
+| Subprocessor         | Purpose                                  | Data Location          |
+| -------------------- | ---------------------------------------- | ---------------------- |
+| **Google Analytics** | Website usage analytics (lingcode.dev)   | United States / Global |
 
 ---
 
 ## Email & Communication
 
-| Subprocessor   | Purpose                                                    | Data Location |
-| -------------- | ---------------------------------------------------------- | ------------- |
-| **ConvertKit** | Product update and feature announcement emails             | United States |
-| **Loops**      | Email marketing and product communications                 | United States |
-| **Plain**      | Consolidated platform for end-user support across channels | United States |
+| Subprocessor | Purpose                              | Data Location |
+| ------------ | ------------------------------------ | ------------- |
+| **Resend**   | Transactional email                  | United States |
+| **Slack**    | Support and product notifications    | United States |
 
 ---
 
-## Analytics & Data Processing
+## AI Services (LingCode-Hosted Models)
 
-| Subprocessor         | Purpose                                                                                  | Data Location |
-| -------------------- | ---------------------------------------------------------------------------------------- | ------------- |
-| **Amplitude**        | Product analytics                                                                        | United States |
-| **Axiom**            | Application telemetry, observability, and logs                                           | United States |
-| **Fivetran**         | Automates data pipeline integration (extract, transformation, and load services) for Zed | United States |
-| **Hex Technologies** | Analytics and debugging                                                                  | United States |
-| **Snowflake**        | Data warehouse                                                                           | United States |
+_These subprocessors apply only when customers opt to use LingCode-hosted AI models. When customers supply their own API keys, data is sent directly to the provider and does not pass through LingCode's infrastructure._
 
----
-
-## Collaboration Services
-
-| Subprocessor | Purpose                                                        | Data Location |
-| ------------ | -------------------------------------------------------------- | ------------- |
-| **LiveKit**  | Real-time audio/video and collaborative session infrastructure | United States |
+| Subprocessor                  | Purpose                                                                  | Data Location |
+| ----------------------------- | ------------------------------------------------------------------------ | ------------- |
+| **LingCode-hosted inference** | Hosted chat model inference                                              | —             |
+| **OpenAI**                    | Image generation and text embeddings (site search and vector features)  | United States |
 
 ---
 
-## AI Services (Zed-Hosted Models)
+## Services You Connect (Not LingCode Subprocessors)
 
-_These subprocessors apply only when customers opt to use Zed's hosted AI models. When users supply their own API keys, or use external agents, data is sent directly to the provider and does not pass through Zed's infrastructure._
-
-| Subprocessor        | Purpose                                                                                                                                                                                                          | Data Location |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| **Anthropic**       | Requests may be sent to Anthropic even if you have another provider's model selected in chat (e.g. for summarization or generating git commit messages). We have a zero data retention agreement with Anthropic. | United States |
-| **Baseten**         | Inference infrastructure for Edit Predictions                                                                                                                                                                    | United States |
-| **Exa Labs**        | AI-powered contextual search and retrieval                                                                                                                                                                       | United States |
-| **Google (Vertex)** | Requests may be sent to Google even if you have another provider's model selected in chat (e.g. for summarization). We have a zero data retention agreement with Google.                                         | United States |
-| **OpenAI**          | Requests may be sent to OpenAI even if you have another provider's model selected in chat (e.g. for summarization or generating git commit messages). We have a zero data retention agreement with OpenAI.       | United States |
-| **xAI**             | Requests may be sent to xAI even if you have another provider's model selected in chat (e.g. for summarization or generating git commit messages). We have a zero data retention agreement with xAI.             | United States |
+Some features let you connect your own third-party accounts or supply your own API keys. In those cases, data flows under your agreement with that provider, and the provider is not a LingCode subprocessor. Examples include your own Supabase project, your own Firebase project, and any API keys you add for features such as SMS or text-to-speech in applications you build with LingCode.
