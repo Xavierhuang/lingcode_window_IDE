@@ -174,14 +174,26 @@ jobs:
           # GCC 14+. 22.04's GCC 11/12 lacks it and the link fails with
           # "undefined symbol: __arm_tpidr2_save". noble ships GCC 14's libgcc_s.
           # (Raises the aarch64 glibc baseline to 2.39 — acceptable for ARM64.)
+          #
+          # remote_server: build it as glibc, NOT the default static-musl. On the
+          # 24.04 host, aws-lc-sys's bcm.c is compiled against glibc 2.39 headers,
+          # which redirect sscanf/strtol to the ISO-C23 symbols __isoc23_sscanf /
+          # __isoc23_strtol. A static-musl link then fails ("undefined symbol:
+          # __isoc23_sscanf") because musl has no such symbols. Since the aarch64
+          # build already needs glibc 2.39 at runtime (webrtc's SME libgcc), a
+          # glibc remote_server loses no portability we still had.
           - arch: aarch64
             runner: ubuntu-24.04-arm
+            remote_server_target: aarch64-unknown-linux-gnu
     env:
       # zed's prebuilt webrtc-sys is compiled with clang; building it with the
       # default `c++` (g++) fails on src/frame_cryptor.cpp. Match upstream Zed's
       # workflows, which all set CC/CXX to clang. `script/linux` installs clang.
       CC: clang
       CXX: clang++
+      # Empty for x86_64 (matrix value unset) -> bundle-linux falls back to the
+      # static-musl remote_server. Set to the gnu triple for aarch64 (see above).
+      REMOTE_SERVER_TARGET: ${{ matrix.remote_server_target }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
