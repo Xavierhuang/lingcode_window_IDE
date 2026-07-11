@@ -409,6 +409,34 @@ impl<T: PromptCompletionProviderDelegate> PromptCompletionProvider<T> {
 
         let new_text = format!("{} ", uri.as_link());
         let new_text_len = new_text.len();
+        // For a folder, pressing Tab (`CompletionIntent::Compose`) should drill
+        // into it and keep filtering rather than commit the mention; Enter and
+        // files commit as usual. `confirm_directory_completion_callback` layers
+        // the drill-in behavior over the normal commit callback.
+        let confirm = if is_directory {
+            confirm_directory_completion_callback(
+                file_name,
+                source_range.start,
+                new_text_len - 1,
+                uri,
+                format!("@{}/", project_path.path.as_unix_str()).into(),
+                source,
+                editor,
+                mention_set,
+                workspace,
+            )
+        } else {
+            confirm_completion_callback(
+                file_name,
+                source_range.start,
+                new_text_len - 1,
+                uri,
+                source,
+                editor,
+                mention_set,
+                workspace,
+            )
+        };
         Some(Completion {
             replace_range: source_range.clone(),
             new_text,
@@ -419,16 +447,7 @@ impl<T: PromptCompletionProviderDelegate> PromptCompletionProvider<T> {
             match_start: None,
             snippet_deduplication_key: None,
             insert_text_mode: None,
-            confirm: Some(confirm_completion_callback(
-                file_name,
-                source_range.start,
-                new_text_len - 1,
-                uri,
-                source,
-                editor,
-                mention_set,
-                workspace,
-            )),
+            confirm: Some(confirm),
         })
     }
 
@@ -1576,6 +1595,66 @@ fn confirm_completion_callback<T: PromptCompletionProviderDelegate>(
                     })
                     .ok();
             }
+        });
+        false
+    })
+}
+
+/// Confirm callback for a **directory** "@" mention. On Tab
+/// (`CompletionIntent::Compose`) it drills into the folder — replacing the just
+/// inserted mention link with the raw `@<path>/` query and re-opening the
+/// completion menu scoped to that folder — instead of committing. Every other
+/// intent (Enter and friends) commits the folder mention via the normal
+/// `confirm_completion_callback`.
+fn confirm_directory_completion_callback<T: PromptCompletionProviderDelegate>(
+    crease_text: SharedString,
+    start: Anchor,
+    content_len: usize,
+    mention_uri: MentionUri,
+    drill_query: SharedString,
+    source: Arc<T>,
+    editor: WeakEntity<Editor>,
+    mention_set: WeakEntity<MentionSet>,
+    workspace: Entity<Workspace>,
+) -> Arc<dyn Fn(CompletionIntent, &mut Window, &mut App) -> bool + Send + Sync> {
+    let drill_editor = editor.clone();
+    let commit = confirm_completion_callback(
+        crease_text,
+        start,
+        content_len,
+        mention_uri,
+        source,
+        editor,
+        mention_set,
+        workspace,
+    );
+    Arc::new(move |intent, window, cx| {
+        if intent != CompletionIntent::Compose {
+            return commit(intent, window, cx);
+        }
+        let editor = drill_editor.clone();
+        let drill_query = drill_query.clone();
+        window.defer(cx, move |window, cx| {
+            let Some(editor) = editor.upgrade() else {
+                return;
+            };
+            editor.update(cx, |editor, cx| {
+                let snapshot = editor.buffer().read(cx).snapshot(cx);
+                let Some(start_anchor) = snapshot.anchor_in_excerpt(start) else {
+                    return;
+                };
+                let start_offset = start_anchor.to_offset(&snapshot);
+                // The completion inserted `<link> ` (the trailing space is why
+                // `content_len` is `new_text_len - 1`); replace that whole span
+                // with the raw `@<path>/` drill query so the next menu re-scopes.
+                let end_offset = (start_offset + content_len + 1).min(snapshot.len());
+                let caret = start_offset + drill_query.len();
+                editor.edit([(start_offset..end_offset, drill_query.to_string())], cx);
+                editor.change_selections(Default::default(), window, cx, |selections| {
+                    selections.select_ranges([caret..caret]);
+                });
+                editor.show_completions(&editor::actions::ShowCompletions, window, cx);
+            });
         });
         false
     })
