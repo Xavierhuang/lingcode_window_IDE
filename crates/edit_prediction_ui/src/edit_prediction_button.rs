@@ -56,7 +56,7 @@ actions!(
 
 const COPILOT_SETTINGS_PATH: &str = "/settings/copilot";
 const COPILOT_SETTINGS_URL: &str = concat!("https://github.com", "/settings/copilot");
-const PRIVACY_DOCS: &str = "https://zed.dev/docs/ai/privacy-and-security";
+const PRIVACY_DOCS: &str = "https://lingcode.dev/docs/ai/privacy-and-security";
 
 struct CopilotErrorToast;
 
@@ -329,7 +329,7 @@ impl Render for EditPredictionButton {
                 let language = self.language.clone();
                 let project = self.project.clone();
                 let provider_name: &'static str = match provider {
-                    EditPredictionProvider::Zed => "zed",
+                    EditPredictionProvider::Zed => "lingcode",
                     _ => "unknown",
                 };
                 let icons = self
@@ -363,7 +363,7 @@ impl Render for EditPredictionButton {
                     }
                     _ => {
                         ep_icon = if enabled { icons.base } else { icons.disabled };
-                        tooltip_meta = "Powered by Zeta"
+                        tooltip_meta = "Powered by LingCode AI"
                     }
                 };
 
@@ -388,7 +388,7 @@ impl Render for EditPredictionButton {
                                     source = "Edit Prediction Status Button"
                                 );
                                 window.dispatch_action(
-                                    zed_actions::OpenZedPredictOnboarding.boxed_clone(),
+                                    zed_actions::OpenLingPredictOnboarding.boxed_clone(),
                                     cx,
                                 );
                             })),
@@ -869,7 +869,7 @@ impl EditPredictionButton {
                                     .child(
                                         Label::new(indoc!{
                                             "Help us improve our open dataset model by sharing data from open source repositories. \
-                                            Zed must detect a license file in your repo for this setting to take effect. \
+                                            LingCode must detect a license file in your repo for this setting to take effect. \
                                             Files with sensitive data and secrets are excluded by default."
                                         })
                                     )
@@ -923,7 +923,7 @@ impl EditPredictionButton {
                 .icon_color(Color::Muted)
                 .documentation_aside(DocumentationSide::Left, |_| {
                     Label::new(indoc!{"
-                        Open your settings to add sensitive paths for which Zed will never predict edits."}).into_any_element()
+                        Open your settings to add sensitive paths for which LingCode will never predict edits."}).into_any_element()
                 })
                 .handler(move |window, cx| {
                     telemetry::event!(
@@ -1095,13 +1095,13 @@ impl EditPredictionButton {
                     .custom_row(move |_window, cx| {
                         let description = indoc! {
                             "You get 2,000 accepted suggestions at every keystroke for free, \
-                            powered by Zeta, our open-source, open-data model"
+                            powered by LingCode AI"
                         };
 
                         v_flex()
                             .max_w_64()
                             .h(rems_from_px(148.))
-                            .child(render_zeta_tab_animation(cx))
+                            .child(render_ling_tab_animation(cx))
                             .child(Label::new("Edit Prediction"))
                             .child(
                                 Label::new(description)
@@ -1115,7 +1115,7 @@ impl EditPredictionButton {
                         telemetry::event!(
                             "Edit Prediction Menu Action",
                             action = "sign_in",
-                            provider = "zed",
+                            provider = "lingcode",
                         );
                         let client = Client::global(cx);
                         window
@@ -1221,7 +1221,7 @@ impl EditPredictionButton {
                             },
                             |_window, cx| cx.open_url(&zed_urls::account_url(cx)),
                         )
-                        .entry("Upgrade to Zed Pro or contact us.", None, |_window, cx| {
+                        .entry("Upgrade to LingCode Pro or contact us.", None, |_window, cx| {
                             telemetry::event!(
                                 "Edit Prediction Menu Action",
                                 action = "upsell_clicked",
@@ -1244,7 +1244,7 @@ impl EditPredictionButton {
                             },
                         )
                         .entry(
-                            "Check your payment status or contact us at billing-support@zed.dev to continue using this feature.",
+                            "Check your payment status or contact us at contact@lingcode.dev to continue using this feature.",
                             None,
                             |_window, cx| {
                                 cx.open_url(&zed_urls::account_url(cx))
@@ -1537,7 +1537,7 @@ fn toggle_edit_prediction_mode(fs: Arc<dyn Fs>, mode: EditPredictionsMode, cx: &
     }
 }
 
-fn render_zeta_tab_animation(cx: &App) -> impl IntoElement {
+fn render_ling_tab_animation(cx: &App) -> impl IntoElement {
     let tab = |n: u64, inverted: bool| {
         let text_color = cx.theme().colors().text;
 

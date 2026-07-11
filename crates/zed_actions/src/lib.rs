@@ -701,10 +701,10 @@ pub mod outline {
 }
 
 actions!(
-    zed_predict_onboarding,
+    ling_predict_onboarding,
     [
-        /// Opens the Zed Predict onboarding modal.
-        OpenZedPredictOnboarding
+        /// Opens the LingCode Predict onboarding modal.
+        OpenLingPredictOnboarding
     ]
 );
 actions!(
