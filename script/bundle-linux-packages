@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+
+# Build native Linux installers (.deb + AppImage) from the tarball that
+# script/bundle-linux already produced.
+#
+# script/bundle-linux emits `target/release/lingcode-linux-<arch>.tar.gz`, whose
+# contents are a self-contained `LingCode<suffix>.app/` tree:
+#
+#     bin/lingcode          <- CLI launcher (crates/cli); finds the editor via ../libexec
+#     libexec/zed-editor    <- the actual editor binary (rpath $ORIGIN/../lib)
+#     lib/*.so              <- bundled shared libraries
+#     share/applications/<app-id>.desktop
+#     share/icons/hicolor/{512x512,1024x1024}/apps/lingcode.png
+#     licenses.md
+#
+# We reuse that tree verbatim (the relative bin/lib/libexec layout is what makes
+# the launcher and rpath work), so this script does NOT rebuild anything — run
+# script/bundle-linux first. Outputs land next to the tarball in target/release:
+#
+#     lingcode-linux-<arch>.deb
+#     LingCode-<arch>.AppImage
+#
+# Usage: script/bundle-linux-packages [--deb-only | --appimage-only]
+
+set -euxo pipefail
+
+want_deb=true
+want_appimage=true
+case "${1:-}" in
+  --deb-only) want_appimage=false ;;
+  --appimage-only) want_deb=false ;;
+  "") ;;
+  *) echo "Unknown option: $1" >&2; exit 1 ;;
+esac
+
+target_dir="${CARGO_TARGET_DIR:-target}"
+arch="$(uname -m)"
+channel=$(<crates/zed/RELEASE_CHANNEL)
+version="$(script/get-crate-version zed)"
+
+# Debian uses its own CPU-arch names; AppImage/appimagetool use uname's.
+case "$arch" in
+  x86_64)  deb_arch="amd64" ;;
+  aarch64) deb_arch="arm64" ;;
+  *) echo "Unsupported arch for packaging: $arch" >&2; exit 1 ;;
+esac
+
+# Channel -> app id / suffix, mirroring script/bundle-linux exactly so we pick
+# up the right .app directory and desktop-file name.
+suffix=""
+app_id="dev.lingcode.LingCode"
+app_display="LingCode"
+if [ "$channel" = "preview" ]; then
+  suffix="-preview"; app_id="dev.lingcode.LingCode-Preview"; app_display="LingCode Preview"
+elif [ "$channel" = "nightly" ]; then
+  suffix="-nightly"; app_id="dev.lingcode.LingCode-Nightly"; app_display="LingCode Nightly"
+elif [ "$channel" = "dev" ]; then
+  suffix="-dev"; app_id="dev.lingcode.LingCode-Dev"; app_display="LingCode Devel"
+fi
+
+# The command name we expose on PATH. Channels get a suffixed command so they can
+# coexist with a stable install (e.g. `lingcode-nightly`).
+cmd="lingcode${suffix}"
+
+tarball="${target_dir}/release/lingcode-linux-${arch}.tar.gz"
+if [ ! -f "$tarball" ]; then
+  echo "Error: $tarball not found. Run script/bundle-linux first." >&2
+  exit 1
+fi
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+tar -xzf "$tarball" -C "$work"
+appdir_src="${work}/LingCode${suffix}.app"
+[ -d "$appdir_src" ] || { echo "Error: ${appdir_src} missing from tarball" >&2; exit 1; }
+
+# ----------------------------------------------------------------------------
+# .deb  (FHS layout: app tree under /usr/lib/<cmd>, launcher symlinked to /usr/bin)
+# ----------------------------------------------------------------------------
+if $want_deb; then
+  pkgroot="${work}/deb"
+  libdir="${pkgroot}/usr/lib/${cmd}"
+  mkdir -p "${libdir}" "${pkgroot}/usr/bin" \
+           "${pkgroot}/usr/share/applications" "${pkgroot}/DEBIAN"
+
+  # Keep bin/lib/libexec together so the launcher + rpath keep resolving.
+  cp -a "${appdir_src}/bin" "${appdir_src}/lib" "${appdir_src}/libexec" "${libdir}/"
+  cp -a "${appdir_src}/share/icons" "${pkgroot}/usr/share/"
+  cp "${appdir_src}/licenses.md" "${libdir}/licenses.md"
+
+  # /usr/bin/<cmd> -> /usr/lib/<cmd>/bin/lingcode  (relative so it survives dpkg)
+  ln -s "../lib/${cmd}/bin/lingcode" "${pkgroot}/usr/bin/${cmd}"
+
+  # Rewrite the desktop file to launch via the absolute installed command.
+  sed -e "s|^TryExec=.*|TryExec=${cmd}|" \
+      -e "s|^Exec=lingcode |Exec=${cmd} |" \
+      -e "s|^Exec=lingcode --new |Exec=${cmd} --new |" \
+      "${appdir_src}/share/applications/${app_id}.desktop" \
+      > "${pkgroot}/usr/share/applications/${app_id}.desktop"
+
+  installed_kb=$(du -sk "${pkgroot}/usr" | cut -f1)
+  cat > "${pkgroot}/DEBIAN/control" <<EOF
+Package: ${cmd}
+Version: ${version}
+Architecture: ${deb_arch}
+Maintainer: Aurelian Labs Inc. <support@lingcode.dev>
+Installed-Size: ${installed_kb}
+Section: devel
+Priority: optional
+Homepage: https://lingcode.dev
+Depends: libc6, libstdc++6, libgcc-s1, libasound2
+Recommends: libvulkan1, mesa-vulkan-drivers, libwayland-client0, libxkbcommon0, libxcb1
+Description: ${app_display} — a high-performance code editor
+ LingCode is a fast, multiplayer code editor built on the GPUI framework.
+ This package bundles the editor, CLI launcher and required runtime libraries.
+EOF
+
+  deb_out="${target_dir}/release/lingcode-linux-${arch}.deb"
+  rm -f "$deb_out"
+  # --root-owner-group => files owned by root:root without needing fakeroot.
+  dpkg-deb --root-owner-group --build "${pkgroot}" "${deb_out}"
+  echo "Built ${deb_out}"
+fi
+
+# ----------------------------------------------------------------------------
+# AppImage  (AppDir = the .app tree at root + AppRun + top-level icon/.desktop)
+# ----------------------------------------------------------------------------
+if $want_appimage; then
+  appdir="${work}/AppDir"
+  mkdir -p "${appdir}"
+  cp -a "${appdir_src}/bin" "${appdir_src}/lib" "${appdir_src}/libexec" \
+        "${appdir_src}/share" "${appdir}/"
+
+  # --foreground is REQUIRED here: the CLI otherwise forks the editor to the
+  # background (crates/cli/src/main.rs) and returns, AppRun exits, and the
+  # AppImage's FUSE mount unmounts out from under the still-running editor.
+  # Staying in the foreground keeps the mount alive for the process's lifetime.
+  cat > "${appdir}/AppRun" <<'EOF'
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "${0}")")"
+exec "${HERE}/bin/lingcode" --foreground "$@"
+EOF
+  chmod +x "${appdir}/AppRun"
+
+  # appimagetool wants a .desktop and a matching icon at the AppDir root.
+  cp "${appdir_src}/share/applications/${app_id}.desktop" "${appdir}/${app_id}.desktop"
+  cp "${appdir_src}/share/icons/hicolor/512x512/apps/lingcode.png" "${appdir}/lingcode.png"
+
+  # Fetch appimagetool for this arch (cached across runs if already present).
+  tool="${target_dir}/appimagetool-${arch}.AppImage"
+  if [ ! -x "$tool" ]; then
+    curl -fL "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${arch}.AppImage" -o "$tool"
+    chmod +x "$tool"
+  fi
+
+  appimage_out="${target_dir}/release/LingCode-${arch}.AppImage"
+  rm -f "$appimage_out"
+  # No FUSE on CI runners -> extract-and-run instead of mounting.
+  ARCH="$arch" APPIMAGE_EXTRACT_AND_RUN=1 "$tool" --no-appstream "${appdir}" "${appimage_out}"
+  echo "Built ${appimage_out}"
+fi
