@@ -53,7 +53,7 @@ pub struct ImportCursorSettings {
 }
 
 pub const FIRST_OPEN: &str = "first_open";
-pub const DOCS_URL: &str = "https://zed.dev/docs/";
+pub const DOCS_URL: &str = "https://lingcode.dev/docs/";
 
 actions!(
     onboarding,
