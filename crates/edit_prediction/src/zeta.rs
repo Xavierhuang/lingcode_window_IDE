@@ -471,7 +471,7 @@ fn handle_api_response<T>(
                         move |cx| {
                             cx.new(|cx| {
                                 ErrorMessagePrompt::new(error_message.clone(), cx)
-                                    .with_link_button("Update LingCode", "https://zed.dev/releases")
+                                    .with_link_button("Update LingCode", "https://github.com/Xavierhuang/lingcode_window_IDE/releases")
                             })
                         },
                     );
