@@ -152,9 +152,23 @@ jobs:
             > Click "More info" → "Run anyway", or add a code-signing certificate to remove the warning.
 
   linux:
-    name: build (linux-x86_64)
-    runs-on: ubuntu-22.04
+    name: build (linux-${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 300
+    strategy:
+      # Keep building the other arch even if one fails.
+      fail-fast: false
+      matrix:
+        include:
+          # Intel/AMD PCs/servers — standard x86 hosted runner.
+          - arch: x86_64
+            runner: ubuntu-22.04
+          # ARM64 (Raspberry Pi, Ampere, Graviton, ARM laptops) — built NATIVELY
+          # on GitHub's hosted ARM runner. script/bundle-linux is arch-aware
+          # (names the tarball by `uname -m` and uses the lld linker on aarch64),
+          # so no script changes are needed — only a native runner.
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
     env:
       # zed's prebuilt webrtc-sys is compiled with clang; building it with the
       # default `c++` (g++) fails on src/frame_cryptor.cpp. Match upstream Zed's
@@ -183,7 +197,8 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
-          key: lingcode-release-linux-x86_64
+          # Per-arch key so the x86_64 and aarch64 builds don't share a cache.
+          key: lingcode-release-linux-${{ matrix.arch }}
 
       - name: Warm cargo registry (so bundle's `cargo metadata --offline` works)
         run: cargo fetch
@@ -191,36 +206,55 @@ jobs:
       - name: Build release tarball
         run: ./script/bundle-linux
 
-      - name: Locate tarball
+      - name: Build native installers (.deb + AppImage)
+        run: ./script/bundle-linux-packages
+
+      - name: Locate artifacts
         id: artifact
         shell: bash
         run: |
-          file="$(find . -maxdepth 4 -name 'lingcode-linux-*.tar.gz' | head -1)"
-          if [ -z "$file" ]; then echo "No Linux tarball produced"; exit 1; fi
-          echo "Tarball: $file ($(du -h "$file" | cut -f1))"
-          echo "path=$file" >> "$GITHUB_OUTPUT"
-          echo "name=$(basename "$file")" >> "$GITHUB_OUTPUT"
+          tarball="$(find . -maxdepth 4 -name "lingcode-linux-${{ matrix.arch }}.tar.gz" | head -1)"
+          deb="$(find . -maxdepth 4 -name "lingcode-linux-${{ matrix.arch }}.deb" | head -1)"
+          appimage="$(find . -maxdepth 4 -name "LingCode-${{ matrix.arch }}.AppImage" | head -1)"
+          for f in "$tarball" "$deb" "$appimage"; do
+            if [ -z "$f" ]; then echo "Missing an expected Linux artifact"; exit 1; fi
+            echo "  $f ($(du -h "$f" | cut -f1))"
+          done
+          {
+            echo "tarball=$tarball"
+            echo "deb=$deb"
+            echo "appimage=$appimage"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Upload tarball as run artifact
+      - name: Upload artifacts as run artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.artifact.outputs.name }}
-          path: ${{ steps.artifact.outputs.path }}
+          name: lingcode-linux-${{ matrix.arch }}
+          path: |
+            ${{ steps.artifact.outputs.tarball }}
+            ${{ steps.artifact.outputs.deb }}
+            ${{ steps.artifact.outputs.appimage }}
           if-no-files-found: error
 
       - name: Add to GitHub Release (tag pushes only)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.artifact.outputs.path }}
+          files: |
+            ${{ steps.artifact.outputs.tarball }}
+            ${{ steps.artifact.outputs.deb }}
+            ${{ steps.artifact.outputs.appimage }}
           # Keep consistent with the Windows job (same tag/release): published, with
           # prerelease tracking the channel, so the draft state can't flip-flop by job order.
           draft: false
           prerelease: ${{ steps.channel.outputs.channel != 'stable' }}
           generate_release_notes: true
           body: |
-            LingCode ${{ github.ref_name }} for Linux (x86_64).
+            LingCode ${{ github.ref_name }} for Linux (${{ matrix.arch }}).
 
-            * **lingcode-linux-x86_64.tar.gz** — extract and run the bundled launcher (or install via the included script).
+            Pick the format that suits you:
+            * **lingcode-linux-${{ matrix.arch }}.tar.gz** — portable; extract and run the bundled launcher.
+            * **lingcode-linux-${{ matrix.arch }}.deb** — Debian/Ubuntu/Mint (`sudo apt install ./lingcode-linux-${{ matrix.arch }}.deb`).
+            * **LingCode-${{ matrix.arch }}.AppImage** — distro-agnostic single file (`chmod +x` then run).
 
             > Built on ubuntu-22.04 (glibc 2.35) — works on recent distros; older ones may need a newer glibc.
