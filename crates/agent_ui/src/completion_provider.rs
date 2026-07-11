@@ -1643,7 +1643,7 @@ fn confirm_directory_completion_callback<T: PromptCompletionProviderDelegate>(
                 let Some(start_anchor) = snapshot.anchor_in_excerpt(start) else {
                     return;
                 };
-                let start_offset = start_anchor.to_offset(&snapshot);
+                let start_offset: usize = start_anchor.to_offset(&snapshot);
                 // The completion inserted `<link> ` (the trailing space is why
                 // `content_len` is `new_text_len - 1`); replace that whole span
                 // with the raw `@<path>/` drill query so the next menu re-scopes.
