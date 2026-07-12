@@ -1510,7 +1510,20 @@ impl acp_thread::AgentModelSelector for NativeAgentModelSelector {
     }
 }
 
-pub static ZED_AGENT_ID: LazyLock<AgentId> = LazyLock::new(|| AgentId::new("Zed Agent"));
+pub static ZED_AGENT_ID: LazyLock<AgentId> = LazyLock::new(|| AgentId::new("LingCode Agent"));
+
+/// Legacy identifier for the native agent from before the LingCode rebrand.
+/// Threads persisted under the old name store this as their `agent_id`; we still
+/// recognize it (see [`is_native_agent_id`]) so those threads keep loading as the
+/// native agent instead of being treated as an unknown external agent.
+pub static LEGACY_NATIVE_AGENT_ID: LazyLock<AgentId> =
+    LazyLock::new(|| AgentId::new("Zed Agent"));
+
+/// Whether `id` refers to the native (LingCode) agent, accepting the legacy
+/// pre-rebrand name too.
+pub fn is_native_agent_id(id: &str) -> bool {
+    id == ZED_AGENT_ID.as_ref() || id == LEGACY_NATIVE_AGENT_ID.as_ref()
+}
 
 impl acp_thread::AgentConnection for NativeAgentConnection {
     fn agent_id(&self) -> AgentId {

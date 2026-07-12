@@ -1377,7 +1377,7 @@ impl ThreadMetadataDb {
         );
 
         let session_id = row.session_id.as_ref().map(|s| s.0.clone());
-        let agent_id = if row.agent_id.as_ref() == ZED_AGENT_ID.as_ref() {
+        let agent_id = if agent::is_native_agent_id(row.agent_id.as_ref()) {
             None
         } else {
             Some(row.agent_id.to_string())
@@ -2082,7 +2082,7 @@ mod tests {
         assert_eq!(list.len(), 4);
         assert!(
             list.iter()
-                .all(|metadata| metadata.agent_id.as_ref() == agent::ZED_AGENT_ID.as_ref())
+                .all(|metadata| agent::is_native_agent_id(metadata.agent_id.as_ref()))
         );
 
         let existing_metadata = list
