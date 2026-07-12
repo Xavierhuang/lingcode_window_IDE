@@ -293,31 +293,27 @@ struct ZedAiConfiguration {
 impl RenderOnce for ZedAiConfiguration {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let (subscription_text, has_paid_plan) = match self.plan {
-            Some(Plan::ZedPro) => (
-                "You have access to Zed's hosted models through your Pro subscription.",
-                true,
-            ),
-            Some(Plan::ZedProTrial) => (
-                "You have access to Zed's hosted models through your Pro trial.",
-                false,
-            ),
-            Some(Plan::ZedStudent) => (
-                "You have access to Zed's hosted models through your Student subscription.",
-                true,
-            ),
-            Some(Plan::ZedBusiness) => (
+            Some(Plan::Pro) => (
                 if self.is_zed_model_provider_enabled {
-                    "You have access to Zed's hosted models through your organization."
+                    "You have access to LingCode's hosted models (LingModel) through your Pro subscription."
                 } else {
-                    "Zed's hosted models are disabled by your organization's configuration."
+                    "LingCode's hosted models are disabled by your configuration."
                 },
                 true,
             ),
-            Some(Plan::ZedFree) | None => (
-                if self.eligible_for_trial {
-                    "Subscribe for access to Zed's hosted models. Start with a 14 day free trial."
+            Some(Plan::MaxPro) => (
+                if self.is_zed_model_provider_enabled {
+                    "You have access to LingCode's hosted models (LingModel) through your Max Pro subscription."
                 } else {
-                    "Subscribe for access to Zed's hosted models."
+                    "LingCode's hosted models are disabled by your configuration."
+                },
+                true,
+            ),
+            Some(Plan::Free) | None => (
+                if self.eligible_for_trial {
+                    "Subscribe to Pro for LingCode's hosted models (LingModel), or add your own API keys below."
+                } else {
+                    "Subscribe to Pro for access to LingCode's hosted models (LingModel)."
                 },
                 false,
             ),
@@ -330,12 +326,6 @@ impl RenderOnce for ZedAiConfiguration {
                 .style(ButtonStyle::Tinted(TintColor::Accent))
                 .on_click(|_, _, cx| cx.open_url(&zed_urls::account_url(cx)))
                 .into_any_element()
-        } else if self.plan.is_none() || self.eligible_for_trial {
-            Button::new("start_trial", "Start 14-day Free Pro Trial")
-                .full_width()
-                .style(ui::ButtonStyle::Tinted(ui::TintColor::Accent))
-                .on_click(|_, _, cx| cx.open_url(&zed_urls::start_trial_url(cx)))
-                .into_any_element()
         } else {
             Button::new("upgrade", "Upgrade to Pro")
                 .full_width()
@@ -347,9 +337,9 @@ impl RenderOnce for ZedAiConfiguration {
         if !self.is_connected {
             return v_flex()
                 .gap_2()
-                .child(Label::new("Sign in to have access to Zed's complete agentic experience with hosted models."))
+                .child(Label::new("Sign in to have access to LingCode's complete agentic experience with hosted models."))
                 .child(
-                    Button::new("sign_in", "Sign In to use Zed AI")
+                    Button::new("sign_in", "Sign In to use LingCode AI")
                         .start_icon(Icon::new(IconName::Github).size(IconSize::Small).color(Color::Muted))
                         .full_width()
                         .on_click({
@@ -496,43 +486,34 @@ impl Component for ZedAiConfiguration {
                     single_example(
                         "Free Plan",
                         configuration(PreviewConfiguration {
-                            plan: Some(Plan::ZedFree),
+                            plan: Some(Plan::Free),
                             is_connected: true,
                             is_zed_model_provider_enabled: true,
                             eligible_for_trial: true,
                         }),
                     ),
                     single_example(
-                        "Zed Pro Trial Plan",
+                        "Pro Plan",
                         configuration(PreviewConfiguration {
-                            plan: Some(Plan::ZedProTrial),
-                            is_connected: true,
-                            is_zed_model_provider_enabled: true,
-                            eligible_for_trial: true,
-                        }),
-                    ),
-                    single_example(
-                        "Zed Pro Plan",
-                        configuration(PreviewConfiguration {
-                            plan: Some(Plan::ZedPro),
-                            is_connected: true,
-                            is_zed_model_provider_enabled: true,
-                            eligible_for_trial: true,
-                        }),
-                    ),
-                    single_example(
-                        "Business Plan - Zed models enabled",
-                        configuration(PreviewConfiguration {
-                            plan: Some(Plan::ZedBusiness),
+                            plan: Some(Plan::Pro),
                             is_connected: true,
                             is_zed_model_provider_enabled: true,
                             eligible_for_trial: false,
                         }),
                     ),
                     single_example(
-                        "Business Plan - Zed models disabled",
+                        "Max Pro Plan",
                         configuration(PreviewConfiguration {
-                            plan: Some(Plan::ZedBusiness),
+                            plan: Some(Plan::MaxPro),
+                            is_connected: true,
+                            is_zed_model_provider_enabled: true,
+                            eligible_for_trial: false,
+                        }),
+                    ),
+                    single_example(
+                        "Max Pro Plan - models disabled",
+                        configuration(PreviewConfiguration {
+                            plan: Some(Plan::MaxPro),
                             is_connected: true,
                             is_zed_model_provider_enabled: false,
                             eligible_for_trial: false,

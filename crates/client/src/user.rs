@@ -114,6 +114,10 @@ pub struct UserStore {
     update_contacts_tx: mpsc::UnboundedSender<UpdateContacts>,
     edit_prediction_usage: Option<EditPredictionUsage>,
     plan_info: Option<PlanInfo>,
+    /// LingCode's managed tier (free/pro/max_pro), fetched from the LingModel
+    /// entitlement endpoint. LingCode does not use Zed's cloud `plan_info`, so
+    /// this is what drives the plan chip and agent-panel plan states.
+    lingmodel_plan: Option<Plan>,
     current_user: watch::Receiver<Option<Arc<User>>>,
     current_organization: Option<Arc<Organization>>,
     organizations: Vec<Arc<Organization>>,
@@ -197,6 +201,7 @@ impl UserStore {
             plans_by_organization: HashMap::default(),
             configuration_by_organization: HashMap::default(),
             plan_info: None,
+            lingmodel_plan: None,
             edit_prediction_usage: None,
             contacts: Default::default(),
             incoming_contact_requests: Default::default(),
@@ -761,11 +766,11 @@ impl UserStore {
             use cloud_api_client::Plan;
 
             return match plan.as_str() {
-                "free" => Some(Plan::ZedFree),
-                "trial" => Some(Plan::ZedProTrial),
-                "pro" => Some(Plan::ZedPro),
+                "free" => Some(Plan::Free),
+                "pro" => Some(Plan::Pro),
+                "max_pro" => Some(Plan::MaxPro),
                 _ => {
-                    panic!("ZED_SIMULATE_PLAN must be one of 'free', 'trial', or 'pro'");
+                    panic!("ZED_SIMULATE_PLAN must be one of 'free', 'pro', or 'max_pro'");
                 }
             };
         }
@@ -774,7 +779,23 @@ impl UserStore {
             return self.plan_for_organization(&organization.id);
         }
 
-        self.plan_info.as_ref().map(|info| info.plan())
+        // Prefer Zed's cloud plan when present; otherwise fall back to LingCode's
+        // managed LingModel tier (the path actually used by LingCode accounts).
+        self.plan_info
+            .as_ref()
+            .map(|info| info.plan())
+            .or(self.lingmodel_plan)
+    }
+
+    /// Sets the LingCode managed tier fetched from the LingModel entitlement
+    /// endpoint. Drives the plan chip and agent-panel plan states for LingCode
+    /// accounts (which don't use Zed's cloud `plan_info`).
+    pub fn set_lingmodel_plan(&mut self, plan: Option<Plan>, cx: &mut Context<Self>) {
+        if self.lingmodel_plan != plan {
+            self.lingmodel_plan = plan;
+            cx.emit(Event::PrivateUserInfoUpdated);
+            cx.notify();
+        }
     }
 
     pub fn subscription_period(&self) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
@@ -890,7 +911,7 @@ impl UserStore {
                     KnownOrUnknown::Known(plan) => plan,
                     KnownOrUnknown::Unknown(_) => {
                         // If we get a plan that we don't recognize, fall back to the Free plan.
-                        Plan::ZedFree
+                        Plan::Free
                     }
                 };
 

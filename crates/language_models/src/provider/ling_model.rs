@@ -13,6 +13,8 @@
 use anthropic::{AnthropicError, AnthropicModelMode};
 use anyhow::{Result, anyhow};
 use base64::Engine as _;
+use client::UserStore;
+use cloud_api_types::Plan;
 use credentials_provider::CredentialsProvider;
 use futures::{AsyncReadExt as _, FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
 use gpui::{AnyView, App, AsyncApp, Context, Entity, SharedString, Subscription, Task};
@@ -42,6 +44,11 @@ const PROVIDER_NAME: LanguageModelProviderName = LanguageModelProviderName::new(
 /// Anthropic-compatible base for the LingModel proxy. The Anthropic client
 /// appends `/v1/messages`. This is a LingCode-branded host by design.
 const LINGMODEL_API_URL: &str = "https://lingcode.dev/api/inference/anthropic";
+
+/// Entitlement endpoint: returns the authenticated account's managed tier
+/// (`free` | `pro` | `max_pro`). Authenticated with the same LingModel token
+/// used for inference, sent as `Authorization: Bearer <token>`.
+const ENTITLEMENT_URL: &str = "https://lingcode.dev/api/entitlement";
 
 const API_KEY_ENV_VAR_NAME: &str = "LINGMODEL_API_KEY";
 static API_KEY_ENV_VAR: LazyLock<EnvVar> = env_var!(API_KEY_ENV_VAR_NAME);
@@ -97,6 +104,9 @@ pub struct State {
     api_key_state: ApiKeyState,
     credentials_provider: Arc<dyn CredentialsProvider>,
     http_client: Arc<dyn HttpClient>,
+    /// Used to publish the fetched managed tier so the plan chip / agent panel
+    /// reflect the real subscription. `None` in degraded/test paths.
+    user_store: Option<Entity<UserStore>>,
     pending: Option<PendingAuth>,
     _auth_subscription: Option<Subscription>,
 }
@@ -105,6 +115,7 @@ impl State {
     fn new(
         http_client: Arc<dyn HttpClient>,
         credentials_provider: Arc<dyn CredentialsProvider>,
+        user_store: Option<Entity<UserStore>>,
         cx: &mut Context<Self>,
     ) -> Self {
         // Subscribe to browser-OAuth callbacks routed in from the `zed` crate.
@@ -139,6 +150,7 @@ impl State {
             ),
             credentials_provider,
             http_client,
+            user_store,
             pending: None,
             _auth_subscription,
         }
@@ -228,23 +240,62 @@ impl State {
 
     fn set_api_key(&mut self, api_key: Option<String>, cx: &mut Context<Self>) -> Task<Result<()>> {
         let credentials_provider = self.credentials_provider.clone();
-        self.api_key_state.store(
+        let store = self.api_key_state.store(
             LingModelLanguageModelProvider::api_url(),
             api_key,
             |this| &mut this.api_key_state,
             credentials_provider,
             cx,
-        )
+        );
+        // Once the key is persisted (set or cleared), refresh the managed tier so
+        // the plan chip / agent panel track sign-in and sign-out.
+        cx.spawn(async move |this, cx| {
+            store.await?;
+            this.update(cx, |this, cx| this.refresh_plan(cx))?;
+            anyhow::Ok(())
+        })
     }
 
     fn authenticate(&mut self, cx: &mut Context<Self>) -> Task<Result<(), AuthenticateError>> {
         let credentials_provider = self.credentials_provider.clone();
-        self.api_key_state.load_if_needed(
+        let load = self.api_key_state.load_if_needed(
             LingModelLanguageModelProvider::api_url(),
             |this| &mut this.api_key_state,
             credentials_provider,
             cx,
-        )
+        );
+        cx.spawn(async move |this, cx| {
+            let result = load.await;
+            // After the stored token loads on startup, fetch the tier so a Pro /
+            // Max Pro account shows the correct plan immediately. Best-effort.
+            this.update(cx, |this, cx| this.refresh_plan(cx)).ok();
+            result
+        })
+    }
+
+    /// Fetch the account's managed tier from the entitlement endpoint using the
+    /// stored token and publish it to `UserStore`. Clears the tier when there is
+    /// no token. Best-effort: any failure leaves the current plan untouched.
+    fn refresh_plan(&self, cx: &mut Context<Self>) {
+        let Some(user_store) = self.user_store.clone() else {
+            return;
+        };
+        let http_client = self.http_client.clone();
+        let key = self
+            .api_key_state
+            .key(&LingModelLanguageModelProvider::api_url())
+            .map(|key| key.to_string());
+
+        cx.spawn(async move |_this, cx| {
+            let plan = match key {
+                Some(token) => fetch_plan(http_client, &token).await,
+                None => None,
+            };
+            user_store
+                .update(cx, |store, cx| store.set_lingmodel_plan(plan, cx))
+                .ok();
+        })
+        .detach();
     }
 }
 
@@ -252,9 +303,11 @@ impl LingModelLanguageModelProvider {
     pub fn new(
         http_client: Arc<dyn HttpClient>,
         credentials_provider: Arc<dyn CredentialsProvider>,
+        user_store: Option<Entity<UserStore>>,
         cx: &mut App,
     ) -> Self {
-        let state = cx.new(|cx| State::new(http_client.clone(), credentials_provider, cx));
+        let state = cx
+            .new(|cx| State::new(http_client.clone(), credentials_provider, user_store, cx));
 
         Self { http_client, state }
     }
@@ -489,6 +542,38 @@ impl LanguageModel for LingModelModel {
                 should_speculate: config.should_speculate,
                 min_total_token: config.min_total_token,
             })
+    }
+}
+
+/// GET the account's managed tier from the entitlement endpoint. Returns `None`
+/// on any failure (network, non-2xx, or unparseable body) so callers no-op and
+/// leave the current plan unchanged. An unrecognized tier maps to `Free`.
+async fn fetch_plan(http_client: Arc<dyn HttpClient>, token: &str) -> Option<Plan> {
+    let request = HttpRequest::builder()
+        .method("GET")
+        .uri(ENTITLEMENT_URL)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Accept", "application/json")
+        .body(AsyncBody::default())
+        .ok()?;
+
+    let mut response = http_client.send(request).await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let mut text = String::new();
+    response.body_mut().read_to_string(&mut text).await.ok()?;
+
+    #[derive(Deserialize)]
+    struct Entitlement {
+        tier: Option<String>,
+    }
+    let parsed: Entitlement = serde_json::from_str(&text).ok()?;
+    match parsed.tier.as_deref() {
+        Some("pro") => Some(Plan::Pro),
+        Some("max_pro") => Some(Plan::MaxPro),
+        _ => Some(Plan::Free),
     }
 }
 

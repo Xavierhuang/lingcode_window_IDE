@@ -54,17 +54,11 @@ impl AgentPanelOnboarding {
 
 impl Render for AgentPanelOnboarding {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let enrolled_in_trial = self
-            .user_store
-            .read(cx)
-            .plan()
-            .is_some_and(|plan| plan == Plan::ZedProTrial);
-
         let is_pro_user = self
             .user_store
             .read(cx)
             .plan()
-            .is_some_and(|plan| plan == Plan::ZedPro);
+            .is_some_and(|plan| matches!(plan, Plan::Pro | Plan::MaxPro));
 
         let onboarding = ZedAiOnboarding::new(
             self.client.clone(),
@@ -80,7 +74,7 @@ impl Render for AgentPanelOnboarding {
         AgentPanelOnboardingCard::new()
             .child(onboarding)
             .map(|this| {
-                if enrolled_in_trial || is_pro_user || self.has_configured_providers {
+                if is_pro_user || self.has_configured_providers {
                     this
                 } else {
                     this.child(ApiKeysWithoutProviders::new())

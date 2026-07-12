@@ -40,7 +40,7 @@ impl Render for EditPredictionOnboarding {
             .user_store
             .read(cx)
             .plan()
-            .is_some_and(|plan| plan == Plan::ZedFree);
+            .is_some_and(|plan| plan == Plan::Free);
 
         let github_copilot = v_flex()
             .gap_1()

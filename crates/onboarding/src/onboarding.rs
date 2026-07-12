@@ -234,11 +234,9 @@ impl Onboarding {
             "signing_in"
         } else {
             match plan {
-                Some(Plan::ZedPro) => "pro",
-                Some(Plan::ZedProTrial) => "trial",
-                Some(Plan::ZedBusiness) => "business",
-                Some(Plan::ZedStudent) => "student",
-                Some(Plan::ZedFree) | None => "free",
+                Some(Plan::Pro) => "pro",
+                Some(Plan::MaxPro) => "max_pro",
+                Some(Plan::Free) | None => "free",
             }
         };
         let agents_installed = basics_page::FEATURED_AGENT_IDS

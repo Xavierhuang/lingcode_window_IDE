@@ -13,22 +13,25 @@ fn server_url(cx: &App) -> &str {
     &ClientSettings::get_global(cx).server_url
 }
 
-/// Returns the URL to the account page on zed.dev.
-pub fn account_url(cx: &App) -> String {
-    format!("{server_url}/account", server_url = server_url(cx))
+/// Returns the URL to the LingCode account page.
+///
+/// This is the deployed marketing/account site (served from the LingCode web
+/// root), which is independent of the collab `server_url`.
+pub fn account_url(_cx: &App) -> String {
+    "https://lingcode.dev/account.html".to_string()
 }
 
-/// Returns the URL to the start trial page on zed.dev.
-pub fn start_trial_url(cx: &App) -> String {
-    format!(
-        "{server_url}/account/start-trial",
-        server_url = server_url(cx)
-    )
+/// Returns the URL to the LingCode pricing/checkout page.
+///
+/// LingCode has no separate "start trial" flow; the pricing page hosts the
+/// Free / Pro / Max Pro plans and their Stripe checkout links.
+pub fn start_trial_url(_cx: &App) -> String {
+    "https://lingcode.dev/pricing.html".to_string()
 }
 
-/// Returns the URL to the upgrade page on zed.dev.
-pub fn upgrade_to_zed_pro_url(cx: &App) -> String {
-    format!("{server_url}/account/upgrade", server_url = server_url(cx))
+/// Returns the URL to the LingCode pricing/upgrade page.
+pub fn upgrade_to_zed_pro_url(_cx: &App) -> String {
+    "https://lingcode.dev/pricing.html".to_string()
 }
 
 /// Returns the URL to Zed's terms of service.

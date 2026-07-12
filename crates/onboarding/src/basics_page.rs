@@ -589,9 +589,8 @@ fn render_lingcode_agent_button(user_store: &Entity<UserStore>, cx: &mut App) ->
     let status = *client.status().borrow();
 
     let plan = user_store.read(cx).plan();
-    let is_free = matches!(plan, Some(Plan::ZedFree) | None);
-    let is_pro = matches!(plan, Some(Plan::ZedPro));
-    let is_trial = matches!(plan, Some(Plan::ZedProTrial));
+    let is_free = matches!(plan, Some(Plan::Free) | None);
+    let is_pro = matches!(plan, Some(Plan::Pro) | Some(Plan::MaxPro));
 
     let is_signed_out = status.is_signed_out()
         || matches!(
@@ -638,7 +637,7 @@ fn render_lingcode_agent_button(user_store: &Entity<UserStore>, cx: &mut App) ->
         )
         .name("LingCode Agent")
         .state(state_element)
-        .disabled(is_trial || is_pro)
+        .disabled(is_pro)
         .on_click(move |_, _, cx| {
             // LingCode: the LingCode Agent authenticates via the LingModel API
             // key from the lingcode.dev account page — not the upstream Zed

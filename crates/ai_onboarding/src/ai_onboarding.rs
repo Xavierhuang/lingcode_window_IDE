@@ -93,17 +93,6 @@ impl ZedAiOnboarding {
         )
     }
 
-    fn pro_trial_stamp(cx: &App) -> impl IntoElement {
-        div().absolute().bottom_1().right_1().child(
-            Vector::new(
-                VectorName::ProTrialStamp,
-                rems_from_px(156.),
-                rems_from_px(60.),
-            )
-            .color(Color::Custom(cx.theme().colors().text.alpha(0.8))),
-        )
-    }
-
     fn business_stamp(cx: &App) -> impl IntoElement {
         div().absolute().bottom_1().right_1().child(
             Vector::new(
@@ -112,17 +101,6 @@ impl ZedAiOnboarding {
                 rems_from_px(60.),
             )
             .color(Color::Custom(cx.theme().colors().text_accent.alpha(0.8))),
-        )
-    }
-
-    fn student_stamp(cx: &App) -> impl IntoElement {
-        div().absolute().bottom_1().right_1().child(
-            Vector::new(
-                VectorName::StudentStamp,
-                rems_from_px(156.),
-                rems_from_px(60.),
-            )
-            .color(Color::Custom(cx.theme().colors().text.alpha(0.8))),
         )
     }
 
@@ -154,15 +132,15 @@ impl ZedAiOnboarding {
             .w_full()
             .relative()
             .gap_1()
-            .child(Headline::new("Welcome to Zed AI"))
+            .child(Headline::new("Welcome to LingCode AI"))
             .child(
-                Label::new("Sign in to try Zed Pro for 14 days, no credit card required.")
+                Label::new("Sign in to unlock LingModel — managed inference, no API keys to juggle.")
                     .color(Color::Muted)
                     .mb_2(),
             )
             .child(PlanDefinitions.pro_plan())
             .child(
-                Button::new("sign_in", "Try Zed Pro for Free")
+                Button::new("sign_in", "Sign In to Continue")
                     .disabled(signing_in)
                     .full_width()
                     .style(ButtonStyle::Tinted(ui::TintColor::Accent))
@@ -184,7 +162,7 @@ impl ZedAiOnboarding {
                 .relative()
                 .min_w_0()
                 .gap_1()
-                .child(Headline::new("Welcome to Zed AI"))
+                .child(Headline::new("Welcome to LingCode AI"))
                 .child(YoungAccountBanner)
                 .child(
                     v_flex()
@@ -203,7 +181,7 @@ impl ZedAiOnboarding {
                         )
                         .child(PlanDefinitions.pro_plan())
                         .child(
-                            Button::new("pro", "Get Started")
+                            Button::new("pro", "Get Pro")
                                 .full_width()
                                 .style(ButtonStyle::Tinted(ui::TintColor::Accent))
                                 .on_click(move |_, _window, cx| {
@@ -221,7 +199,7 @@ impl ZedAiOnboarding {
                 .w_full()
                 .relative()
                 .gap_1()
-                .child(Headline::new("Welcome to Zed AI"))
+                .child(Headline::new("Welcome to LingCode AI"))
                 .child(
                     v_flex()
                         .mt_2()
@@ -256,46 +234,29 @@ impl ZedAiOnboarding {
                             h_flex()
                                 .gap_2()
                                 .child(
-                                    Label::new("Pro Trial")
+                                    Label::new("Pro")
                                         .size(LabelSize::Small)
                                         .color(Color::Accent)
                                         .buffer_font(cx),
                                 )
                                 .child(Divider::horizontal()),
                         )
-                        .child(PlanDefinitions.pro_trial(true))
+                        .child(PlanDefinitions.pro_plan())
                         .child(
-                            Button::new("pro", "Start Free Trial")
+                            Button::new("pro", "Get Pro")
                                 .full_width()
                                 .style(ButtonStyle::Tinted(ui::TintColor::Accent))
                                 .on_click(move |_, _window, cx| {
                                     telemetry::event!(
-                                        "Start Trial Clicked",
+                                        "Upgrade To Pro Clicked",
                                         state = "post-sign-in"
                                     );
-                                    cx.open_url(&zed_urls::start_trial_url(cx))
+                                    cx.open_url(&zed_urls::upgrade_to_zed_pro_url(cx))
                                 }),
                         ),
                 )
                 .into_any_element()
         }
-    }
-
-    fn render_trial_state(&self, cx: &mut App) -> AnyElement {
-        v_flex()
-            .w_full()
-            .relative()
-            .gap_1()
-            .child(Self::pro_trial_stamp(cx))
-            .child(Headline::new("Welcome to the Zed Pro Trial"))
-            .child(
-                Label::new("Here's what you get for the next 14 days:")
-                    .color(Color::Muted)
-                    .mb_2(),
-            )
-            .child(PlanDefinitions.pro_trial(false))
-            .children(self.render_dismiss_button())
-            .into_any_element()
     }
 
     fn render_pro_plan_state(&self, cx: &mut App) -> AnyElement {
@@ -304,7 +265,7 @@ impl ZedAiOnboarding {
             .relative()
             .gap_1()
             .child(Self::certified_user_stamp(cx))
-            .child(Headline::new("Welcome to Zed Pro"))
+            .child(Headline::new("Welcome to LingCode Pro"))
             .child(
                 Label::new("Here's what you get:")
                     .color(Color::Muted)
@@ -315,36 +276,19 @@ impl ZedAiOnboarding {
             .into_any_element()
     }
 
-    fn render_business_plan_state(&self, cx: &mut App) -> AnyElement {
+    fn render_max_pro_plan_state(&self, cx: &mut App) -> AnyElement {
         v_flex()
             .w_full()
             .relative()
             .gap_1()
             .child(Self::business_stamp(cx))
-            .child(Headline::new("Welcome to Zed Business"))
+            .child(Headline::new("Welcome to LingCode Max Pro"))
             .child(
                 Label::new("Here's what you get:")
                     .color(Color::Muted)
                     .mb_2(),
             )
-            .child(PlanDefinitions.business_plan())
-            .children(self.render_dismiss_button())
-            .into_any_element()
-    }
-
-    fn render_student_plan_state(&self, cx: &mut App) -> AnyElement {
-        v_flex()
-            .w_full()
-            .relative()
-            .gap_1()
-            .child(Self::student_stamp(cx))
-            .child(Headline::new("Welcome to Zed Student"))
-            .child(
-                Label::new("Here's what you get:")
-                    .color(Color::Muted)
-                    .mb_2(),
-            )
-            .child(PlanDefinitions.student_plan())
+            .child(PlanDefinitions.max_pro_plan())
             .children(self.render_dismiss_button())
             .into_any_element()
     }
@@ -355,11 +299,9 @@ impl RenderOnce for ZedAiOnboarding {
         if matches!(self.sign_in_status, SignInStatus::SignedIn) {
             match self.plan {
                 None => self.render_free_plan_state(cx),
-                Some(Plan::ZedFree) => self.render_free_plan_state(cx),
-                Some(Plan::ZedProTrial) => self.render_trial_state(cx),
-                Some(Plan::ZedPro) => self.render_pro_plan_state(cx),
-                Some(Plan::ZedBusiness) => self.render_business_plan_state(cx),
-                Some(Plan::ZedStudent) => self.render_student_plan_state(cx),
+                Some(Plan::Free) => self.render_free_plan_state(cx),
+                Some(Plan::Pro) => self.render_pro_plan_state(cx),
+                Some(Plan::MaxPro) => self.render_max_pro_plan_state(cx),
             }
         } else {
             self.render_sign_in_disclaimer(cx)
@@ -417,23 +359,15 @@ impl Component for ZedAiOnboarding {
                     ),
                     single_example(
                         "Free Plan",
-                        onboarding(SignInStatus::SignedIn, Some(Plan::ZedFree), false),
-                    ),
-                    single_example(
-                        "Pro Trial",
-                        onboarding(SignInStatus::SignedIn, Some(Plan::ZedProTrial), false),
+                        onboarding(SignInStatus::SignedIn, Some(Plan::Free), false),
                     ),
                     single_example(
                         "Pro Plan",
-                        onboarding(SignInStatus::SignedIn, Some(Plan::ZedPro), false),
+                        onboarding(SignInStatus::SignedIn, Some(Plan::Pro), false),
                     ),
                     single_example(
-                        "Business Plan",
-                        onboarding(SignInStatus::SignedIn, Some(Plan::ZedBusiness), false),
-                    ),
-                    single_example(
-                        "Student Plan",
-                        onboarding(SignInStatus::SignedIn, Some(Plan::ZedStudent), false),
+                        "Max Pro Plan",
+                        onboarding(SignInStatus::SignedIn, Some(Plan::MaxPro), false),
                     ),
                 ])
                 .into_any_element(),

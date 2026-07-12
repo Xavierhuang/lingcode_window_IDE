@@ -236,12 +236,14 @@ fn register_language_model_providers(
 ) {
     // LingCode: the Zed-hosted cloud provider (Zed Pro/Business/AI paywall) is disabled.
     // LingCode ships its own ACP agent and 16-provider set instead of Zed's hosted service.
-    let _ = &user_store; // formerly consumed by CloudLanguageModelProvider::new
     // LingCode: the managed LingModel provider is registered first for prominence.
+    // It receives `user_store` so it can publish the account's managed tier
+    // (fetched from the entitlement endpoint) to the plan chip / agent panel.
     registry.register_provider(
         Arc::new(LingModelLanguageModelProvider::new(
             client.http_client(),
             credentials_provider.clone(),
+            Some(user_store.clone()),
             cx,
         )),
         cx,
