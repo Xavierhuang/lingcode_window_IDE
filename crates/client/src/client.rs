@@ -1377,7 +1377,7 @@ impl Client {
             // implemented by lingcode.dev, so the browser hand-off would open a broken page.
             // Account/model auth is done via the LingModel API key from the lingcode.dev account
             // page — open it instead and surface a message telling the user what to do.
-            cx.update(|cx| cx.open_url("https://lingcode.dev/account.html")).ok();
+            cx.update(|cx| cx.open_url("https://lingcode.dev/account.html"));
             anyhow::bail!(
                 "Opened the LingCode account page in your browser. \
                  Sign in there, then paste your LingModel API key into Settings to use models."
