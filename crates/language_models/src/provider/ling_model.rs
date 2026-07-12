@@ -733,7 +733,7 @@ impl Render for ConfigurationView {
                                 .child(Label::new("Get your API key from your"))
                                 .child(ButtonLink::new(
                                     "LingCode account",
-                                    "https://lingcode.dev/account.html",
+                                    "https://lingcode.dev/cli-token.html",
                                 )),
                         )
                         .child(ListBulletItem::new(
