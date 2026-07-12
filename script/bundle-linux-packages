@@ -91,10 +91,17 @@ if $want_deb; then
   # /usr/bin/<cmd> -> /usr/lib/<cmd>/bin/lingcode  (relative so it survives dpkg)
   ln -s "../lib/${cmd}/bin/lingcode" "${pkgroot}/usr/bin/${cmd}"
 
-  # Rewrite the desktop file to launch via the absolute installed command.
-  sed -e "s|^TryExec=.*|TryExec=${cmd}|" \
-      -e "s|^Exec=lingcode |Exec=${cmd} |" \
-      -e "s|^Exec=lingcode --new |Exec=${cmd} --new |" \
+  # Rewrite the desktop file to launch via the ABSOLUTE path to this package's
+  # own launcher — not the bare `lingcode` command, which resolves through $PATH.
+  # If the user also has a separately-installed standalone CLI named `lingcode`
+  # earlier in $PATH (e.g. /usr/local/bin, which precedes /usr/bin), a bare
+  # command would run that CLI instead. That CLI has no bundled editor beside it
+  # (no ../libexec/zed-editor), so the app never starts. An absolute path is
+  # immune to $PATH ordering and always launches the editor we shipped.
+  launcher="/usr/lib/${cmd}/bin/lingcode"
+  sed -e "s|^TryExec=.*|TryExec=${launcher}|" \
+      -e "s|^Exec=lingcode --new |Exec=${launcher} --new |" \
+      -e "s|^Exec=lingcode |Exec=${launcher} |" \
       "${appdir_src}/share/applications/${app_id}.desktop" \
       > "${pkgroot}/usr/share/applications/${app_id}.desktop"
 
