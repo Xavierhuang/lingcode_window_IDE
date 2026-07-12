@@ -178,6 +178,38 @@ pub enum LanguageModelCompletionError {
 }
 
 impl LanguageModelCompletionError {
+    /// Overrides the provider name on any variant that carries one.
+    ///
+    /// Used when a provider reuses another provider's client machinery — e.g.
+    /// LingModel talks to its Anthropic-compatible upstream via the `anthropic`
+    /// crate, whose error conversion hardcodes the Anthropic provider name. This
+    /// relabels those errors so they aren't misattributed to Anthropic.
+    pub fn with_provider(mut self, new_provider: LanguageModelProviderName) -> Self {
+        match &mut self {
+            Self::NoApiKey { provider }
+            | Self::RateLimitExceeded { provider, .. }
+            | Self::ServerOverloaded { provider, .. }
+            | Self::ApiInternalServerError { provider, .. }
+            | Self::HttpResponseError { provider, .. }
+            | Self::BadRequestFormat { provider, .. }
+            | Self::AuthenticationError { provider, .. }
+            | Self::PermissionError { provider, .. }
+            | Self::ApiEndpointNotFound { provider }
+            | Self::ApiReadResponseError { provider, .. }
+            | Self::SerializeRequest { provider, .. }
+            | Self::BuildRequestBody { provider, .. }
+            | Self::HttpSend { provider, .. }
+            | Self::DeserializeResponse { provider, .. }
+            | Self::StreamEndedUnexpectedly { provider } => {
+                *provider = new_provider;
+            }
+            Self::PromptTooLarge { .. }
+            | Self::UpstreamProviderError { .. }
+            | Self::Other(_) => {}
+        }
+        self
+    }
+
     fn parse_upstream_error_json(message: &str) -> Option<(StatusCode, String)> {
         let error_json = serde_json::from_str::<serde_json::Value>(message).ok()?;
         let upstream_status = error_json

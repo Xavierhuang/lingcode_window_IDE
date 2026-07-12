@@ -435,7 +435,11 @@ impl LingModelModel {
                 request,
                 beta_headers,
             );
-            request.await.map_err(Into::into)
+            // Relabel the provider: the `anthropic` crate hardcodes the Anthropic
+            // provider name in its error conversion, but this is LingModel.
+            request
+                .await
+                .map_err(|err| LanguageModelCompletionError::from(err).with_provider(PROVIDER_NAME))
         }
         .boxed()
     }
@@ -531,7 +535,10 @@ impl LanguageModel for LingModelModel {
         let request = self.stream_completion(request, cx);
         let future = self.request_limiter.stream(async move {
             let response = request.await?;
-            Ok(AnthropicEventMapper::new().map_stream(response))
+            // Relabel per-event errors from Anthropic -> LingModel (see above).
+            Ok(AnthropicEventMapper::new()
+                .map_stream(response)
+                .map(|result| result.map_err(|err| err.with_provider(PROVIDER_NAME))))
         });
         async move { Ok(future.await?.boxed()) }.boxed()
     }
