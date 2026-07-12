@@ -277,7 +277,9 @@ impl State {
     /// stored token and publish it to `UserStore`. Clears the tier when there is
     /// no token. Best-effort: any failure leaves the current plan untouched.
     fn refresh_plan(&self, cx: &mut Context<Self>) {
-        let Some(user_store) = self.user_store.clone() else {
+        // Downgrade to a weak handle: in the async task below `cx` is an
+        // `AsyncApp`, where only `WeakEntity::update` (fallible) is available.
+        let Some(user_store) = self.user_store.as_ref().map(|store| store.downgrade()) else {
             return;
         };
         let http_client = self.http_client.clone();
